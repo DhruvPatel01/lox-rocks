@@ -6,6 +6,8 @@ use rustyline::Editor;
 mod scanner;
 mod token;
 mod loxerr;
+mod expr;
+mod ast_printer;
 
 fn run_prompt() {
     let mut rl = Editor::<()>::new();

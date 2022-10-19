@@ -23,15 +23,15 @@ pub enum TokenType {
 }
 
 #[derive(Debug)]
-pub struct Token<'a> {
+pub struct Token {
     pub token_type: TokenType,
-    pub lexeme: &'a str,
+    pub lexeme: String,
     pub line: usize,
 }
 
-impl<'a> Token<'a> {
+impl Token {
     pub fn new(token_type:TokenType, lexeme: &str, line: usize) -> Token {
-        Token{token_type, lexeme, line}
+        Token{token_type, lexeme:String::from(lexeme), line}
     }
 }
 

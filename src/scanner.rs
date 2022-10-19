@@ -7,7 +7,7 @@ pub struct Scanner<'a> {
     chars: Vec<char>,
     source_current: usize, 
     chars_current: usize,
-    tokens: Vec<Token<'a>>,
+    tokens: Vec<Token>,
     start: usize,
     line: usize,
     pub has_error: bool,
@@ -147,7 +147,7 @@ impl<'a> Scanner<'a> {
 
     fn add_token(&mut self, token_type: TokenType) {
         let lexeme = &self.source[self.start .. self.source_current];
-        let t = Token{token_type, lexeme, line: self.line};
+        let t = Token{token_type, lexeme:lexeme.to_owned(), line: self.line};
         self.tokens.push(t);
     }
 
