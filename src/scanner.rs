@@ -1,11 +1,11 @@
-use crate::token::{Token, TokenType};
 use crate::loxerr;
+use crate::token::{Token, TokenType};
 use TokenType::*;
 
 pub struct Scanner<'a> {
     source: &'a str,
     chars: Vec<char>,
-    source_current: usize, 
+    source_current: usize,
     chars_current: usize,
     tokens: Vec<Token>,
     start: usize,
@@ -35,7 +35,6 @@ fn keyword_or_identifier(lexeme: &str) -> TokenType {
     }
 }
 
-
 impl<'a> Scanner<'a> {
     pub fn new(source: &'a str) -> Scanner {
         Scanner {
@@ -46,7 +45,7 @@ impl<'a> Scanner<'a> {
             tokens: Vec::new(),
             start: 0, // in bytes, not unicode code points
             line: 1,
-            has_error: false
+            has_error: false,
         }
     }
 
@@ -82,14 +81,18 @@ impl<'a> Scanner<'a> {
     }
 
     fn peek(&self) -> char {
-        if self.is_at_end() {'\0'} else {self.chars[self.chars_current]}
+        if self.is_at_end() {
+            '\0'
+        } else {
+            self.chars[self.chars_current]
+        }
     }
 
     fn peek_next(&self) -> char {
-        if self.chars_current+1 >= self.chars.len() {
+        if self.chars_current + 1 >= self.chars.len() {
             '\0'
         } else {
-            self.chars[self.chars_current+1]
+            self.chars[self.chars_current + 1]
         }
     }
 
@@ -107,47 +110,59 @@ impl<'a> Scanner<'a> {
             ';' => self.add_token(Semicolon),
             '*' => self.add_token(Star),
             '<' => {
-                let token = if self.is_match('=') {LessEqual} else {Less};
+                let token = if self.is_match('=') { LessEqual } else { Less };
                 self.add_token(token);
-            },
+            }
             '!' => {
-                let token = if self.is_match('=') {BangEqual} else {Bang};
+                let token = if self.is_match('=') { BangEqual } else { Bang };
                 self.add_token(token);
-            }, 
+            }
             '>' => {
-                let token = if self.is_match('=') {GreaterEqual} else {Greater};
+                let token = if self.is_match('=') {
+                    GreaterEqual
+                } else {
+                    Greater
+                };
                 self.add_token(token);
-            }, 
+            }
             '=' => {
-                let token = if self.is_match('=') {EqualEqual} else {Equal};
+                let token = if self.is_match('=') {
+                    EqualEqual
+                } else {
+                    Equal
+                };
                 self.add_token(token);
-            },
+            }
             '/' => {
                 if self.is_match('/') {
-                    while self.peek() != '\n' && !self.is_at_end()
-                        {self.advance();}
+                    while self.peek() != '\n' && !self.is_at_end() {
+                        self.advance();
+                    }
                 } else {
                     self.add_token(Slash)
                 }
-            },
-            '\t'| '\r'| ' ' => {},
-            '\n' => self.line += 1, 
+            }
+            '\t' | '\r' | ' ' => {}
+            '\n' => self.line += 1,
             '"' => self.string(),
             '0'..='9' => self.number(),
             _ => {
-                if is_alpha(self.peek()) {
+                if is_alpha(c) {
                     self.identifier();
                 } else {
                     self.error(&format!("Unexpected character {}", c))
                 }
-            },
+            }
         }
-
     }
 
     fn add_token(&mut self, token_type: TokenType) {
-        let lexeme = &self.source[self.start .. self.source_current];
-        let t = Token{token_type, lexeme:lexeme.to_owned(), line: self.line};
+        let lexeme = &self.source[self.start..self.source_current];
+        let t = Token {
+            token_type,
+            lexeme: lexeme.to_owned(),
+            line: self.line,
+        };
         self.tokens.push(t);
     }
 
@@ -158,7 +173,9 @@ impl<'a> Scanner<'a> {
 
     fn string(&mut self) {
         while self.peek() != '"' && !self.is_at_end() {
-            if self.peek() == '\n' {self.line += 1;}
+            if self.peek() == '\n' {
+                self.line += 1;
+            }
             self.advance();
         }
 
@@ -167,17 +184,21 @@ impl<'a> Scanner<'a> {
         }
 
         self.advance(); //swallow the terminating "
-        let s = &self.source[self.start+1 .. self.source_current-1];
+        let s = &self.source[self.start + 1..self.source_current - 1];
         self.add_token(StringLiteral(s.to_owned()));
     }
 
     fn number(&mut self) {
-        while is_digit(self.peek()) {self.advance();}
+        while is_digit(self.peek()) {
+            self.advance();
+        }
 
         if self.peek() == '.' && is_digit(self.peek_next()) {
             self.advance();
 
-            while is_digit(self.peek()) {self.advance();}
+            while is_digit(self.peek()) {
+                self.advance();
+            }
         }
 
         let lexeme = &self.source[self.start..self.source_current];
@@ -186,7 +207,9 @@ impl<'a> Scanner<'a> {
     }
 
     fn identifier(&mut self) {
-        while is_alpha_numeric(self.peek()) {self.advance();}
+        while is_alpha_numeric(self.peek()) {
+            self.advance();
+        }
 
         let lexeme = &self.source[self.start..self.source_current];
         self.add_token(keyword_or_identifier(lexeme));
@@ -200,9 +223,7 @@ fn is_digit(c: char) -> bool {
 
 #[inline]
 fn is_alpha(c: char) -> bool {
-    (c >= 'a' && c <= 'z') ||
-    (c >= 'A' && c <= 'Z') ||
-    c == '_'
+    (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'
 }
 
 #[inline]

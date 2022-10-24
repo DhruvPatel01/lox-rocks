@@ -1,13 +1,15 @@
-use std::{env, process, fs};
+use std::{env, fs, process};
 
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 
-mod scanner;
-mod token;
-mod loxerr;
 mod expr;
 mod ast_printer;
+mod loxerr;
+mod parser;
+mod scanner;
+mod token;
+mod interpreter;
 
 fn run_prompt() {
     let mut rl = Editor::<()>::new();
@@ -19,20 +21,17 @@ fn run_prompt() {
             Ok(line) => {
                 rl.add_history_entry(line.as_str());
                 run(line.as_str());
-            },
-            Err(ReadlineError::Interrupted) => (), 
-            Err(ReadlineError::Eof) => {
-                break
-            },
+            }
+            Err(ReadlineError::Interrupted) => (),
+            Err(ReadlineError::Eof) => break,
             Err(err) => {
                 println!("Error: {:?}", err);
-                break
+                break;
             }
         }
     }
     rl.save_history("history.txt").unwrap();
 }
-
 
 fn run_file(file_name: &str) {
     let file = fs::read_to_string(file_name).expect("Error while reading the file");
@@ -46,12 +45,15 @@ fn run(line: &str) -> bool {
     let mut scanner = scanner::Scanner::new(line);
     let tokens = scanner.scan_tokens();
     
-    for token in tokens {
-        println!("{:#?}", token);
-    }
-    scanner.has_error
-}
+    let mut parser = parser::Parser::new(&tokens);
+    let expr = parser.parse();
+    if let None = expr {return false;}
+    let expr = expr.unwrap();
 
+    println!("{}", ast_printer::print(&expr));
+
+    parser.has_error
+}
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -59,7 +61,9 @@ fn main() {
     match args.len() {
         1 => run_prompt(),
         2 => run_file(&args[1]),
-        _ => {println!("Usage: rlox [script_name]"); process::exit(64);}
+        _ => {
+            println!("Usage: rlox [script_name]");
+            process::exit(64);
+        }
     };
-
 }
