@@ -11,6 +11,7 @@ mod scanner;
 mod token;
 mod interpreter;
 
+
 fn run_prompt() {
     let mut rl = Editor::<()>::new();
     rl.load_history("history.txt").unwrap();
@@ -46,13 +47,15 @@ fn run(line: &str) -> bool {
     let tokens = scanner.scan_tokens();
     
     let mut parser = parser::Parser::new(&tokens);
-    let expr = parser.parse();
-    if let None = expr {return false;}
-    let expr = expr.unwrap();
+    let expr = if let Some(e) = parser.parse() {
+        e
+    } else {
+        return false;
+    };
 
-    println!("{}", ast_printer::print(&expr));
-
-    parser.has_error
+    let interpreter = interpreter::Interpreter::new();
+    interpreter.interpret(&expr)
+    
 }
 
 fn main() {
