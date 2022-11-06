@@ -1,4 +1,5 @@
 use crate::expr::{Expr, Value};
+use crate::stmt::Stmt;
 use crate::token::{Token, TokenType};
 use TokenType::*;
 use crate::loxerr::{self, ParseError};
@@ -14,8 +15,12 @@ impl<'a> Parser<'a> {
         Parser { current: 0, tokens, has_error: false}
     }
 
-    pub fn parse(&mut self) -> Option<Expr> {
-        self.expression().ok()
+    pub fn parse(&mut self) -> Vec<Stmt> {
+        let mut stmts = Vec::new();
+        while !self.is_at_end() {
+            stmts.push(self.declaration());
+        }
+        stmts
     }
 
     fn peek(&self) -> &Token {
@@ -77,13 +82,61 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn declaration(&mut self) -> Stmt {
+        let res = if self.is_match(&[Var]) {
+            self.var_declaration()
+        } else {
+            self.statement()
+        };
+
+        match res {
+            Ok(s) => s,
+            Err(_e) => {
+                self.synchronize();
+                Stmt::Null
+            }
+        }
+    }
+
+    fn var_declaration(&mut self) -> Result<Stmt, ParseError> {
+        let name = self.consume(Identifier, "Expect variable name.")?.clone();
+        let init = if self.is_match(&[Equal]) {
+            Some(self.expression()?)
+        } else {
+            None
+        };
+        self.consume(Semicolon, "Expect ';' after variable declaration.")?;
+
+        Ok(Stmt::Var(name, init))
+    }
+
+    fn statement(&mut self) -> Result<Stmt, ParseError> {
+        if self.is_match(&[Print]) {
+            self.print_statement()
+        } else {
+            self.expression_statement()
+        }
+    }
+
+    fn print_statement(&mut self) -> Result<Stmt, ParseError> {
+        let expr = self.expression()?;
+        self.consume(Semicolon, &"Expect ';' after value.")?;
+        Ok(Stmt::Print(expr))
+    }
+
+    fn expression_statement(&mut self) -> Result<Stmt, ParseError> {
+        let expr = self.expression()?;
+        self.consume(Semicolon, &"Expect ';' after expression.")?;
+        Ok(Stmt::Expression(expr))
+    }
+
     fn expression(&mut self) -> Result<Expr, ParseError> {
         self.equality()
     }
 
     fn equality(&mut self) -> Result<Expr, ParseError> {
         let mut expr = self.comparison()?;
-        while self.is_match(&vec![BangEqual, EqualEqual]) {
+        while self.is_match(&[BangEqual, EqualEqual]) {
             let op = self.previous().clone();
             let right = self.comparison()?;
             expr = Expr::Binary(Box::new(expr), op, Box::new(right));
@@ -93,7 +146,7 @@ impl<'a> Parser<'a> {
 
     fn comparison(&mut self) -> Result<Expr, ParseError> {
         let mut expr = self.term()?;
-        while self.is_match(&vec![Greater, GreaterEqual, Less, LessEqual]) {
+        while self.is_match(&[Greater, GreaterEqual, Less, LessEqual]) {
             let op = self.previous().clone();
             let right = self.term()?;
             expr = Expr::Binary(Box::new(expr), op, Box::new(right));
@@ -103,7 +156,7 @@ impl<'a> Parser<'a> {
 
     fn term(&mut self) -> Result<Expr, ParseError> {
         let mut expr = self.factor()?;
-        while self.is_match(&vec![Plus, Minus]) {
+        while self.is_match(&[Plus, Minus]) {
             let op = self.previous().clone();
             let right = self.factor()?;
             expr = Expr::Binary(Box::new(expr), op, Box::new(right));
@@ -154,6 +207,10 @@ impl<'a> Parser<'a> {
                 let l = Expr::Literal(Value::String(x.clone()));
                 self.advance();
                 Ok(l)
+            }
+            Identifier => {
+                self.advance();
+                Ok(Expr::Variable(self.previous().clone()))
             }
             LeftParen => {
                 self.advance();

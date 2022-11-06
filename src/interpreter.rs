@@ -1,10 +1,13 @@
+use std::cell::RefCell;
+
 use crate::expr::{Expr, Value};
+use crate::stmt::Stmt;
 use crate::token::{Token, TokenType};
 use crate::loxerr::RuntimeError;
+use crate::env::Environment;
 use Value::*;
 use TokenType::*;
 
-pub type Result = std::result::Result<Value, RuntimeError>;
 
 pub fn is_truthy(value: &Value) -> bool {
     match value {
@@ -14,25 +17,30 @@ pub fn is_truthy(value: &Value) -> bool {
     }
 }
 
-fn err_numeric_operand(token: &Token) -> Result {
-    Err(RuntimeError{token: token.clone(), error: "operand must be a number."})
+fn err_numeric_operand(token: &Token) -> Result<Value, RuntimeError> {
+    Err(RuntimeError{token: token.clone(), error: "operand must be a number.".to_owned()})
 }
 
-fn err_numstr_operand(token: &Token) -> Result {
-    Err(RuntimeError{token: token.clone(), error: "operand must be a numbers or strings."})
+fn err_numstr_operand(token: &Token) -> Result<Value, RuntimeError> {
+    Err(RuntimeError{token: token.clone(), error: "operand must be a numbers or strings.".to_owned()})
 }
 
-pub struct Interpreter;
+pub struct Interpreter{
+    env: RefCell<Environment>,
+}
 
 impl Interpreter {
     pub fn new() -> Self {
-        Interpreter{}
+        Interpreter {
+            env: RefCell::new(Environment::new())
+        }
     }
     
-    fn evaluate(&self, expr: &Expr) -> Result {
+    fn evaluate(&self, expr: &Expr) -> Result<Value, RuntimeError> {
         match expr {
             Expr::Literal(val) => Ok(val.clone()),
             Expr::Grouping(expr) => self.evaluate(expr),
+            Expr::Variable(token) => self.env.borrow().get(token),
             Expr::Unary(op, expr) => {
                 let rhs = self.evaluate(expr)?;
                 match op.token_type {
@@ -90,15 +98,36 @@ impl Interpreter {
         }
     }
 
-    pub fn interpret(&self, expr: &Expr) -> bool {
-        match self.evaluate(expr) {
-            Err(e) => {
-                e.error();
-                false
+    fn execute(&self, stmt: &Stmt) -> Result<(), RuntimeError> {
+        match stmt {
+            Stmt::Expression(e) => {
+                self.evaluate(e)?;
             }
-            Ok(e) => {
-                println!("{}", e);
-                true
+
+            Stmt::Print(e) => {
+                let res = self.evaluate(e)?;
+                println!("{}", res);
+            }
+
+            Stmt::Var(token, init) => {
+                let value = init
+                    .as_ref()
+                    .map(|x| self.evaluate(x))
+                    .unwrap_or(Ok(Value::Nil))?;
+                self.env.borrow_mut().define(&token.lexeme, value);
+            }       
+            
+            Stmt::Null => (),
+        };
+        Ok(())
+    }
+    
+
+    pub fn interpret(&self, stmts: &Vec<Stmt>) {
+        for stmt in stmts {
+            match self.execute(stmt) {
+                Err(e) => {e.error(); break;},
+                _ => (),
             }
         }
     }

@@ -12,7 +12,7 @@ pub struct ParseError;
     
 pub struct RuntimeError {
     pub token: Token,
-    pub error: &'static str,
+    pub error: String,
 }
 
 pub fn parse_error(token: &Token, msg: &str) {

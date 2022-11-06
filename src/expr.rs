@@ -7,6 +7,7 @@ pub enum Expr {
     Grouping(Box<Expr>),
     Literal(Value),
     Unary(Token, Box<Expr>),
+    Variable(Token),
 }
 
 #[derive(Debug, Clone, PartialEq)]
