@@ -14,7 +14,18 @@ impl Environment {
     }
 
     pub fn define(&mut self, name: &str, val: Value) {
-        self.values.insert(name.to_owned(), val.clone());
+        self.values.insert(name.to_owned(), val);
+    }
+
+    pub fn assign(&mut self, t: &Token, val: Value) ->Result<(), RuntimeError> {
+        if self.values.contains_key(&t.lexeme) {
+            self.values.insert(t.lexeme.clone(), val);
+            Ok(())
+        } else {
+            Err(RuntimeError { 
+                token: t.clone(), 
+                error: format!("Undefined variable '{}'.", t.lexeme)})
+        }
     }
 
     pub fn get(&self, name: &Token) -> Result<Value, RuntimeError> {

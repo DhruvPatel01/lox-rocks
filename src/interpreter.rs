@@ -41,6 +41,11 @@ impl Interpreter {
             Expr::Literal(val) => Ok(val.clone()),
             Expr::Grouping(expr) => self.evaluate(expr),
             Expr::Variable(token) => self.env.borrow().get(token),
+            Expr::Assign(token, expr) => {
+                let val = self.evaluate(expr)?;
+                self.env.borrow_mut().assign(token, val.clone())?;
+                Ok(val)
+            }
             Expr::Unary(op, expr) => {
                 let rhs = self.evaluate(expr)?;
                 match op.token_type {
@@ -88,7 +93,7 @@ impl Interpreter {
                     }
                     Plus => match (l, r) {
                         (Value::Number(l), Value::Number(r)) => Ok(Value::Number(l + r)),
-                        (Value::String(ref l), Value::String(ref r)) => Ok(Value::String(format!("{} {}", l, r))),
+                        (Value::String(ref l), Value::String(ref r)) => Ok(Value::String(format!("{}{}", l, r))),
                         _ => err_numstr_operand(op)
                     }
                     _ => unreachable!(),
