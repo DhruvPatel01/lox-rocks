@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::rc::Rc;
 
 use crate::expr::{Expr, Value};
 use crate::stmt::Stmt;
@@ -26,17 +27,17 @@ fn err_numstr_operand(token: &Token) -> Result<Value, RuntimeError> {
 }
 
 pub struct Interpreter{
-    env: RefCell<Environment>,
+    env: Rc<RefCell<Environment>>,
 }
 
 impl Interpreter {
     pub fn new() -> Self {
         Interpreter {
-            env: RefCell::new(Environment::new())
+            env: Rc::new(RefCell::new(Environment::new()))
         }
     }
     
-    fn evaluate(&self, expr: &Expr) -> Result<Value, RuntimeError> {
+    fn evaluate(&mut self, expr: &Expr) -> Result<Value, RuntimeError> {
         match expr {
             Expr::Literal(val) => Ok(val.clone()),
             Expr::Grouping(expr) => self.evaluate(expr),
@@ -103,7 +104,21 @@ impl Interpreter {
         }
     }
 
-    fn execute(&self, stmt: &Stmt) -> Result<(), RuntimeError> {
+    fn execute_block(&mut self, stmts: &Vec<Stmt>) -> Result<(), RuntimeError> {
+        let new_env = Rc::new(RefCell::new(Environment::encloser(&self.env)));
+        let old_env = std::mem::replace(&mut self.env, new_env);
+        
+        for stmt in stmts {
+            if let Err(e) = self.execute(stmt) {
+                self.env = old_env;
+                return Err(e);
+            }
+        }
+        self.env = old_env;
+        Ok(())
+    }
+
+    fn execute(&mut self, stmt: &Stmt) -> Result<(), RuntimeError> {
         match stmt {
             Stmt::Expression(e) => {
                 self.evaluate(e)?;
@@ -120,7 +135,9 @@ impl Interpreter {
                     .map(|x| self.evaluate(x))
                     .unwrap_or(Ok(Value::Nil))?;
                 self.env.borrow_mut().define(&token.lexeme, value);
-            }       
+            }     
+            
+            Stmt::Block(stmts) => {self.execute_block(stmts)?;}
             
             Stmt::Null => (),
         };
@@ -128,7 +145,7 @@ impl Interpreter {
     }
     
 
-    pub fn interpret(&self, stmts: &Vec<Stmt>) {
+    pub fn interpret(&mut self, stmts: &Vec<Stmt>) {
         for stmt in stmts {
             match self.execute(stmt) {
                 Err(e) => {e.error(); break;},

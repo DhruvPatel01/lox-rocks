@@ -57,13 +57,13 @@ impl Lox {
     fn run(&mut self, line: &str) -> bool {
         let mut scanner = scanner::Scanner::new(line);
         let tokens = scanner.scan_tokens();
-        
+
         let mut parser = parser::Parser::new(&tokens);
         let stmts = parser.parse();
-    
-        self.interpreter.interpret(&stmts);
-        true
         
+
+        self.interpreter.interpret(&stmts);
+        true        
     }
     
 }

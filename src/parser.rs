@@ -113,6 +113,8 @@ impl<'a> Parser<'a> {
     fn statement(&mut self) -> Result<Stmt, ParseError> {
         if self.is_match(&[Print]) {
             self.print_statement()
+        } else if self.is_match(&[LeftBrace]) {
+            Ok(Stmt::Block(self.block()?))
         } else {
             self.expression_statement()
         }
@@ -128,6 +130,17 @@ impl<'a> Parser<'a> {
         let expr = self.expression()?;
         self.consume(Semicolon, &"Expect ';' after expression.")?;
         Ok(Stmt::Expression(expr))
+    }
+
+    fn block(&mut self) -> Result<Vec<Stmt>, ParseError> {
+        let mut stmts = Vec::new();
+
+        while !self.check(&RightBrace) && !self.is_at_end() {
+            stmts.push(self.declaration());
+        }
+
+        self.consume(RightBrace, "Expect '}' after block.")?;
+        Ok(stmts)
     }
 
     fn expression(&mut self) -> Result<Expr, ParseError> {
