@@ -111,19 +111,87 @@ impl<'a> Parser<'a> {
     }
 
     fn statement(&mut self) -> Result<Stmt, ParseError> {
-        if self.is_match(&[Print]) {
+        if self.is_match(&[If]) {
+            self.if_statement()
+        } else if self.is_match(&[Print]) {
             self.print_statement()
         } else if self.is_match(&[LeftBrace]) {
             Ok(Stmt::Block(self.block()?))
+        } else if self.is_match(&[While]) {
+            self.while_statement()
+        } else if self.is_match(&[For]) {
+            self.for_statement()  
         } else {
             self.expression_statement()
         }
+    }
+
+    fn if_statement(&mut self) -> Result<Stmt, ParseError> {
+        self.consume(LeftParen, "Expect '(' after 'if'.")?;
+        let expr = self.expression()?;
+        self.consume(RightParen, "Expect ')' after if condition.")?;
+
+        let if_stmt = Box::new(self.statement()?);
+
+        let else_stmt = if self.is_match(&[Else]) {
+            Some(Box::new(self.statement()?))
+        } else {
+            None
+        };
+
+        Ok(Stmt::If(expr, if_stmt, else_stmt))
     }
 
     fn print_statement(&mut self) -> Result<Stmt, ParseError> {
         let expr = self.expression()?;
         self.consume(Semicolon, &"Expect ';' after value.")?;
         Ok(Stmt::Print(expr))
+    }
+
+    fn while_statement(&mut self) -> Result<Stmt, ParseError> {
+        self.consume(LeftParen, "Expect '(' after 'while'.")?;
+        let condition = self.expression()?;
+        self.consume(RightParen, "Expect ')' after condition.")?;
+
+        let body = self.statement()?;
+        Ok(Stmt::While(condition, Box::new(body)))
+    }
+
+    fn for_statement(&mut self) -> Result<Stmt, ParseError> {
+        self.consume(LeftParen,  "Expect '(' after 'for'.")?;
+
+        let initializer = if self.is_match(&[Semicolon]) {
+            Stmt::Null
+        } else if self.is_match(&[Var]) {
+            self.var_declaration()?
+        } else {
+            self.expression_statement()?
+        };
+
+        let condition = if !self.check(&Semicolon) {
+            self.expression()?
+        } else {
+            Expr::Literal(Value::Bool(true))
+        };
+        self.consume(Semicolon, "Expect ';' after loop condition.")?;
+
+        let increment = if !self.check(&RightParen) {
+            Some(self.expression()?)
+        } else {
+            None
+        };
+        self.consume(RightParen, "Expect ')' after for clauses.")?;
+
+        let mut body = self.statement()?;
+
+        if let Some(increment) = increment {
+            body = Stmt::Block(vec![body, Stmt::Expression(increment)]);
+        }
+
+        body = Stmt::While(condition, Box::new(body));
+        body = Stmt::Block(vec![initializer, body]);
+
+        return Ok(body);
     }
 
     fn expression_statement(&mut self) -> Result<Stmt, ParseError> {
@@ -148,7 +216,7 @@ impl<'a> Parser<'a> {
     }
 
     fn assignment(&mut self) -> Result<Expr, ParseError> {
-        let expr = self.equality()?;
+        let expr = self.or()?;
 
         if self.is_match(&[Equal]) {
             let equals = self.previous().clone();
@@ -158,8 +226,29 @@ impl<'a> Parser<'a> {
                 return Ok(Expr::Assign(t, Box::new(value)));
             }
 
-            loxerr::parse_error(&equals, "Invalid assignment target.")
-            
+            loxerr::parse_error(&equals, "Invalid assignment target.");
+            self.has_error = true;
+            return Err(ParseError);
+        }
+        Ok(expr)
+    }
+
+    fn or(&mut self) -> Result<Expr, ParseError> {
+        let mut expr = self.and()?;
+        while self.is_match(&[Or]) {
+            let op = self.previous().clone();
+            let right = self.and()?;
+            expr = Expr::Logical(Box::new(expr), op, Box::new(right));
+        }
+        Ok(expr)
+    }
+
+    fn and(&mut self) -> Result<Expr, ParseError> {
+        let mut expr = self.equality()?;
+        while self.is_match(&[And]) {
+            let op = self.previous().clone();
+            let right = self.equality()?;
+            expr = Expr::Logical(Box::new(expr), op, Box::new(right));
         }
         Ok(expr)
     }
@@ -248,7 +337,11 @@ impl<'a> Parser<'a> {
                 self.consume(RightParen, "Expect ')' after expression.")?;
                 Ok(Expr::Grouping(Box::new(e)))
             }
-            _ => todo!()
+            _ => {
+                self.has_error = true;
+                loxerr::parse_error(self.peek(), "Expect expression.");
+                Err(ParseError)
+            }
         }
     }
 }

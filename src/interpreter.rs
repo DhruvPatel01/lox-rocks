@@ -19,11 +19,11 @@ pub fn is_truthy(value: &Value) -> bool {
 }
 
 fn err_numeric_operand(token: &Token) -> Result<Value, RuntimeError> {
-    Err(RuntimeError{token: token.clone(), error: "operand must be a number.".to_owned()})
+    Err(RuntimeError{token: token.clone(), error: "Operands must be numbers.".to_owned()})
 }
 
 fn err_numstr_operand(token: &Token) -> Result<Value, RuntimeError> {
-    Err(RuntimeError{token: token.clone(), error: "operand must be a numbers or strings.".to_owned()})
+    Err(RuntimeError{token: token.clone(), error: "Operands must be two numbers or two strings.".to_owned()})
 }
 
 pub struct Interpreter{
@@ -53,9 +53,17 @@ impl Interpreter {
                     Bang => Ok(Bool(!is_truthy(&rhs))),
                     Minus => match rhs {
                             Value::Number(n) => Ok(Value::Number(-n)),
-                            _ => err_numeric_operand(op),
+                            _ => Err(RuntimeError{token: op.clone(), error: "Operand must be a number.".to_owned()})
                         }
                     _ => unreachable!(),
+                }
+            }
+            Expr::Logical(e1, op, e2) => {
+                let left = self.evaluate(e1)?;
+                match op.token_type {
+                    Or if is_truthy(&left) => Ok(left),
+                    And if !is_truthy(&left) => Ok(left),
+                    _ => self.evaluate(e2)
                 }
             }
             Expr::Binary(e1, op, e2) => {
@@ -120,8 +128,21 @@ impl Interpreter {
 
     fn execute(&mut self, stmt: &Stmt) -> Result<(), RuntimeError> {
         match stmt {
+            Stmt::If(expr, if_part, else_part) => {
+                if is_truthy(&self.evaluate(expr)?) {
+                    self.execute(if_part)?;
+                } else if let Some(else_part) = else_part {
+                    self.execute(else_part)?;
+                }
+            }
             Stmt::Expression(e) => {
                 self.evaluate(e)?;
+            }
+
+            Stmt::While(condition, body) => {
+                while is_truthy(&self.evaluate(condition)?) {
+                    self.execute(body)?;
+                }
             }
 
             Stmt::Print(e) => {
@@ -145,13 +166,11 @@ impl Interpreter {
     }
     
 
-    pub fn interpret(&mut self, stmts: &Vec<Stmt>) {
+    pub fn interpret(&mut self, stmts: &Vec<Stmt>) -> Result<(), RuntimeError> {
         for stmt in stmts {
-            match self.execute(stmt) {
-                Err(e) => {e.error(); break;},
-                _ => (),
-            }
+            self.execute(stmt)?;
         }
+        Ok(())
     }
 }
 

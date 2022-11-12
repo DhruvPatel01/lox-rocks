@@ -181,6 +181,7 @@ impl<'a> Scanner<'a> {
 
         if self.is_at_end() {
             self.error("Unterminated string.");
+            return;
         }
 
         self.advance(); //swallow the terminating "

@@ -48,22 +48,27 @@ impl Lox {
 
     fn run_file(&mut self, file_name: &str) {
         let file = fs::read_to_string(file_name).expect("Error while reading the file");
-        let ran_successfully = self.run(&file);
-        if !ran_successfully {
-            process::exit(65);
-        }
+        process::exit(self.run(&file));
     }
     
-    fn run(&mut self, line: &str) -> bool {
+    fn run(&mut self, line: &str) -> i32 {
         let mut scanner = scanner::Scanner::new(line);
         let tokens = scanner.scan_tokens();
 
         let mut parser = parser::Parser::new(&tokens);
         let stmts = parser.parse();
         
+        if parser.has_error || scanner.has_error {
+            return 65;
+        } 
 
-        self.interpreter.interpret(&stmts);
-        true        
+        if let Err(e) = self.interpreter.interpret(&stmts) {
+            e.error();
+            return 70;
+        }
+
+
+        0
     }
     
 }

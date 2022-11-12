@@ -1,7 +1,7 @@
 use crate::token::{Token, TokenType};
 
 fn report(line: usize, wher: &str, msg: &str) {
-    eprintln!("[line {}] Error {}{}", line, wher, msg);
+    eprintln!("[line {}] Error{}: {}", line, wher, msg);
 }
 
 pub fn error(line: usize, msg: &str) {
@@ -17,14 +17,14 @@ pub struct RuntimeError {
 
 pub fn parse_error(token: &Token, msg: &str) {
     if matches!(token.token_type, TokenType::Eof) {
-        error(token.line, &format!("at end: {}", msg));
+        report(token.line, " at end", msg);
     } else {
-        error(token.line, &format!("at '{}': {}", token.lexeme, msg));
+        report(token.line, &format!(" at '{}'", token.lexeme), msg);
     }
 }
 
 impl RuntimeError {
     pub fn error(&self) {
-        eprintln!("{}\n[line {} ]", self.error, self.token.line);
+        eprintln!("{}\n[line {}]", self.error, self.token.line);
     }
 }
