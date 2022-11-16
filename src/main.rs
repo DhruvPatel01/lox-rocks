@@ -12,6 +12,7 @@ mod scanner;
 mod token;
 mod interpreter;
 mod env;
+mod loxcallables;
 
 use crate::interpreter::Interpreter;
 

@@ -6,7 +6,6 @@ use crate::token::Token;
 use crate::expr::Value;
 use crate::loxerr::RuntimeError;
 
-#[derive(Debug)]
 pub struct Environment {
     values: HashMap<String, Value>,
     enclosing: Option<Rc<RefCell<Environment>>>,

@@ -1,14 +1,15 @@
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::env::Environment;
 use crate::expr::{Expr, Value};
+use crate::loxcallables::LoxCallable;
+use crate::loxerr::RuntimeError;
 use crate::stmt::Stmt;
 use crate::token::{Token, TokenType};
-use crate::loxerr::RuntimeError;
-use crate::env::Environment;
-use Value::*;
 use TokenType::*;
-
+use Value::*;
 
 pub fn is_truthy(value: &Value) -> bool {
     match value {
@@ -19,24 +20,45 @@ pub fn is_truthy(value: &Value) -> bool {
 }
 
 fn err_numeric_operand(token: &Token) -> Result<Value, RuntimeError> {
-    Err(RuntimeError{token: token.clone(), error: "Operands must be numbers.".to_owned()})
+    Err(RuntimeError {
+        token: token.clone(),
+        error: "Operands must be numbers.".to_owned(),
+    })
 }
 
 fn err_numstr_operand(token: &Token) -> Result<Value, RuntimeError> {
-    Err(RuntimeError{token: token.clone(), error: "Operands must be two numbers or two strings.".to_owned()})
+    Err(RuntimeError {
+        token: token.clone(),
+        error: "Operands must be two numbers or two strings.".to_owned(),
+    })
 }
 
-pub struct Interpreter{
+pub struct Interpreter {
+    globals: Rc<RefCell<Environment>>,
     env: Rc<RefCell<Environment>>,
 }
 
 impl Interpreter {
     pub fn new() -> Self {
+        let global = Rc::new(RefCell::new(Environment::new()));
+        global.borrow_mut().define(
+            "clock",
+            Value::Callable(LoxCallable::new(0, |_| {
+                Ok(Value::Number(
+                    SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .expect("Could not retrieve time.")
+                        .as_millis() as f64,
+                ))
+            })),
+        );
+
         Interpreter {
-            env: Rc::new(RefCell::new(Environment::new()))
+            globals: Rc::clone(&global),
+            env: Rc::clone(&global),
         }
     }
-    
+
     fn evaluate(&mut self, expr: &Expr) -> Result<Value, RuntimeError> {
         match expr {
             Expr::Literal(val) => Ok(val.clone()),
@@ -47,14 +69,45 @@ impl Interpreter {
                 self.env.borrow_mut().assign(token, val.clone())?;
                 Ok(val)
             }
+            Expr::Call(callee, paren, args) => {
+                let callee = self.evaluate(callee)?;
+                let mut args_evaluated = Vec::new();
+                for arg in args {
+                    args_evaluated.push(self.evaluate(arg)?);
+                }
+
+                match callee {
+                    Value::Callable(callee) => {
+                        if args_evaluated.len() != callee.arity {
+                            Err(RuntimeError {
+                                token: paren.clone(),
+                                error: format!(
+                                    "Expected {} arguments but got {}.",
+                                    callee.arity,
+                                    args_evaluated.len()
+                                ),
+                            })
+                        } else {
+                            callee.call(&self, &args_evaluated)
+                        }
+                    }
+                    _ => Err(RuntimeError {
+                        token: paren.clone(),
+                        error: "Can only call functions and classes.".to_owned(),
+                    }),
+                }
+            }
             Expr::Unary(op, expr) => {
                 let rhs = self.evaluate(expr)?;
                 match op.token_type {
                     Bang => Ok(Bool(!is_truthy(&rhs))),
                     Minus => match rhs {
-                            Value::Number(n) => Ok(Value::Number(-n)),
-                            _ => Err(RuntimeError{token: op.clone(), error: "Operand must be a number.".to_owned()})
-                        }
+                        Value::Number(n) => Ok(Value::Number(-n)),
+                        _ => Err(RuntimeError {
+                            token: op.clone(),
+                            error: "Operand must be a number.".to_owned(),
+                        }),
+                    },
                     _ => unreachable!(),
                 }
             }
@@ -63,51 +116,52 @@ impl Interpreter {
                 match op.token_type {
                     Or if is_truthy(&left) => Ok(left),
                     And if !is_truthy(&left) => Ok(left),
-                    _ => self.evaluate(e2)
+                    _ => self.evaluate(e2),
                 }
             }
             Expr::Binary(e1, op, e2) => {
                 let l = self.evaluate(e1)?;
                 let r = self.evaluate(e2)?;
                 match op.token_type {
-                    EqualEqual => Ok(Value::Bool(l == r)),
-                    BangEqual => Ok(Value::Bool(l != r)),
+                    EqualEqual => Ok(Value::Bool(l.eq(&r))),
+                    BangEqual => Ok(Value::Bool(!l.eq(&r))),
                     Greater => match (l, r) {
                         (Value::Number(l), Value::Number(r)) => Ok(Value::Bool(l > r)),
-                        _ => err_numeric_operand(op)
-                    }
+                        _ => err_numeric_operand(op),
+                    },
                     GreaterEqual => match (l, r) {
                         (Value::Number(l), Value::Number(r)) => Ok(Value::Bool(l >= r)),
-                        _ => err_numeric_operand(op)
-                    }
+                        _ => err_numeric_operand(op),
+                    },
                     Less => match (l, r) {
                         (Value::Number(l), Value::Number(r)) => Ok(Value::Bool(l < r)),
-                        _ => err_numeric_operand(op)
-                    }
+                        _ => err_numeric_operand(op),
+                    },
                     LessEqual => match (l, r) {
                         (Value::Number(l), Value::Number(r)) => Ok(Value::Bool(l <= r)),
-                        _ => err_numeric_operand(op)
-                    }
+                        _ => err_numeric_operand(op),
+                    },
                     Minus => match (l, r) {
                         (Value::Number(l), Value::Number(r)) => Ok(Value::Number(l - r)),
-                        _ => err_numeric_operand(op)
-                    }
+                        _ => err_numeric_operand(op),
+                    },
                     Slash => match (l, r) {
                         (Value::Number(l), Value::Number(r)) => Ok(Value::Number(l / r)),
-                        _ => err_numeric_operand(op)
-                    }
+                        _ => err_numeric_operand(op),
+                    },
                     Star => match (l, r) {
                         (Value::Number(l), Value::Number(r)) => Ok(Value::Number(l * r)),
-                        _ => err_numeric_operand(op)
-                    }
+                        _ => err_numeric_operand(op),
+                    },
                     Plus => match (l, r) {
                         (Value::Number(l), Value::Number(r)) => Ok(Value::Number(l + r)),
-                        (Value::String(ref l), Value::String(ref r)) => Ok(Value::String(format!("{}{}", l, r))),
-                        _ => err_numstr_operand(op)
-                    }
+                        (Value::String(ref l), Value::String(ref r)) => {
+                            Ok(Value::String(format!("{}{}", l, r)))
+                        }
+                        _ => err_numstr_operand(op),
+                    },
                     _ => unreachable!(),
-    
-                } 
+                }
             }
         }
     }
@@ -115,7 +169,7 @@ impl Interpreter {
     fn execute_block(&mut self, stmts: &Vec<Stmt>) -> Result<(), RuntimeError> {
         let new_env = Rc::new(RefCell::new(Environment::encloser(&self.env)));
         let old_env = std::mem::replace(&mut self.env, new_env);
-        
+
         for stmt in stmts {
             if let Err(e) = self.execute(stmt) {
                 self.env = old_env;
@@ -156,15 +210,16 @@ impl Interpreter {
                     .map(|x| self.evaluate(x))
                     .unwrap_or(Ok(Value::Nil))?;
                 self.env.borrow_mut().define(&token.lexeme, value);
-            }     
-            
-            Stmt::Block(stmts) => {self.execute_block(stmts)?;}
-            
+            }
+
+            Stmt::Block(stmts) => {
+                self.execute_block(stmts)?;
+            }
+
             Stmt::Null => (),
         };
         Ok(())
     }
-    
 
     pub fn interpret(&mut self, stmts: &Vec<Stmt>) -> Result<(), RuntimeError> {
         for stmt in stmts {
@@ -173,6 +228,3 @@ impl Interpreter {
         Ok(())
     }
 }
-
-
-
