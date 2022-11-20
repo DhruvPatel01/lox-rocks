@@ -47,7 +47,7 @@ impl<'a> Parser<'a> {
         !self.is_at_end() && self.peek().token_type == *token_type
     }
 
-    fn consume(&mut self, typ: TokenType, msg: &'a str) -> Result<&Token, ParseError> {
+    fn consume(&mut self, typ: TokenType, msg: &str) -> Result<&Token, ParseError> {
         if self.check(&typ) {Ok(self.advance())}
         else {
             loxerr::parse_error(&self.peek(), msg);
@@ -83,7 +83,9 @@ impl<'a> Parser<'a> {
     }
 
     fn declaration(&mut self) -> Stmt {
-        let res = if self.is_match(&[Var]) {
+        let res = if self.is_match(&[Fun]) {
+            self.function("function")
+        } else if self.is_match(&[Var]) {
             self.var_declaration()
         } else {
             self.statement()
@@ -198,6 +200,33 @@ impl<'a> Parser<'a> {
         let expr = self.expression()?;
         self.consume(Semicolon, &"Expect ';' after expression.")?;
         Ok(Stmt::Expression(expr))
+    }
+
+    fn function(&mut self, kind: &str) -> Result<Stmt, ParseError> {
+        let name = self.consume(Identifier, &format!("Expect {} name", kind))?.clone();
+        self.consume(LeftParen, &format!("Expect '(' after {} name.", kind))?;
+
+        let mut parameters = vec![];
+        if !self.check(&RightParen) {
+            loop {
+                if parameters.len() >= 255 {
+                    loxerr::parse_error(self.peek(), "Can't have more than 255 parameters.");
+                    self.has_error = true;
+                }
+
+                parameters.push(self.consume(Identifier, "Expect parameter name.")?.clone());
+
+                if !self.is_match(&[Comma]) {
+                    break;
+                }
+            }
+        }
+        self.consume(RightParen, "Expect ')' after parameters.")?;
+
+        self.consume(LeftBrace, &format!("Expect '{{' before {} body.", kind))?;
+
+        let body = self.block()?;
+        Ok(Stmt::Function(name, parameters, body))
     }
 
     fn block(&mut self) -> Result<Vec<Stmt>, ParseError> {

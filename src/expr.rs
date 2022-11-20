@@ -1,8 +1,10 @@
 use std::fmt;
+use std::rc::Rc;
 
 use crate::token::Token;
 use crate::loxcallables::LoxCallable;
 
+#[derive(Clone)]
 pub enum Expr {
     Assign(Token, Box<Expr>),
     Binary(Box<Expr>, Token, Box<Expr>),
@@ -20,7 +22,7 @@ pub enum Value {
     Number(f64),
     Nil,
     String(String),
-    Callable(LoxCallable)
+    Callable(Rc<dyn LoxCallable>)
 }
 
 impl Value {

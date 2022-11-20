@@ -4,7 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::env::Environment;
 use crate::expr::{Expr, Value};
-use crate::loxcallables::LoxCallable;
+use crate::loxcallables::{Native, self};
 use crate::loxerr::RuntimeError;
 use crate::stmt::Stmt;
 use crate::token::{Token, TokenType};
@@ -34,7 +34,7 @@ fn err_numstr_operand(token: &Token) -> Result<Value, RuntimeError> {
 }
 
 pub struct Interpreter {
-    globals: Rc<RefCell<Environment>>,
+    pub globals: Rc<RefCell<Environment>>,
     env: Rc<RefCell<Environment>>,
 }
 
@@ -43,14 +43,14 @@ impl Interpreter {
         let global = Rc::new(RefCell::new(Environment::new()));
         global.borrow_mut().define(
             "clock",
-            Value::Callable(LoxCallable::new(0, |_| {
+            Value::Callable(Rc::new(Native::new(0, |_| {
                 Ok(Value::Number(
                     SystemTime::now()
                         .duration_since(UNIX_EPOCH)
                         .expect("Could not retrieve time.")
                         .as_millis() as f64,
                 ))
-            })),
+            }))),
         );
 
         Interpreter {
@@ -78,17 +78,17 @@ impl Interpreter {
 
                 match callee {
                     Value::Callable(callee) => {
-                        if args_evaluated.len() != callee.arity {
+                        if args_evaluated.len() != callee.arity() {
                             Err(RuntimeError {
                                 token: paren.clone(),
                                 error: format!(
                                     "Expected {} arguments but got {}.",
-                                    callee.arity,
+                                    callee.arity(),
                                     args_evaluated.len()
                                 ),
                             })
                         } else {
-                            callee.call(&self, &args_evaluated)
+                            callee.call(self, &args_evaluated)
                         }
                     }
                     _ => Err(RuntimeError {
@@ -166,8 +166,8 @@ impl Interpreter {
         }
     }
 
-    fn execute_block(&mut self, stmts: &Vec<Stmt>) -> Result<(), RuntimeError> {
-        let new_env = Rc::new(RefCell::new(Environment::encloser(&self.env)));
+    pub fn execute_block(&mut self, stmts: &Vec<Stmt>, env: Environment) -> Result<(), RuntimeError> {
+        let new_env = Rc::new(RefCell::new(env));
         let old_env = std::mem::replace(&mut self.env, new_env);
 
         for stmt in stmts {
@@ -213,9 +213,12 @@ impl Interpreter {
             }
 
             Stmt::Block(stmts) => {
-                self.execute_block(stmts)?;
+                self.execute_block(stmts, Environment::encloser(&self.env))?;
             }
-
+            Stmt::Function(id, _, _) => {
+                let fun = Rc::new(loxcallables::Function::new(stmt));
+                self.env.borrow_mut().define(&id.lexeme, Value::Callable(fun))
+            }
             Stmt::Null => (),
         };
         Ok(())
