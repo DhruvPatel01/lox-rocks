@@ -1,23 +1,23 @@
 use crate::env::Environment;
 use crate::expr::Value;
 use crate::interpreter::Interpreter;
-use crate::loxerr::RuntimeError;
+use crate::loxerr::RuntimeException;
 use crate::stmt::Stmt;
 use crate::token::Token;
 
 pub trait LoxCallable: std::fmt::Display {
     fn arity(&self) -> usize;
-    fn call(&self, interpreter: &mut Interpreter, args: &[Value]) -> Result<Value, RuntimeError>;
+    fn call(&self, interpreter: &mut Interpreter, args: &[Value]) -> Result<Value, RuntimeException>;
 }
 
 #[derive(Clone)]
 pub struct Native {
     arity: usize,
-    body: fn(&[Value]) -> Result<Value, RuntimeError>,
+    body: fn(&[Value]) -> Result<Value, RuntimeException>,
 }
 
 impl Native{
-    pub fn new(arity: usize, body: fn(&[Value])->Result<Value, RuntimeError>) -> Self {
+    pub fn new(arity: usize, body: fn(&[Value])->Result<Value, RuntimeException>) -> Self {
         Native { arity, body: body}
     }
 }
@@ -45,7 +45,7 @@ impl Function {
 
 
 impl LoxCallable for Native {
-    fn call(&self, _interpreter: &mut Interpreter, args: &[Value]) -> Result<Value, RuntimeError> {
+    fn call(&self, _interpreter: &mut Interpreter, args: &[Value]) -> Result<Value, RuntimeException> {
         (self.body)(args)
     }
 
@@ -55,13 +55,21 @@ impl LoxCallable for Native {
 }
 
 impl LoxCallable for Function {
-    fn call(&self, interpreter: &mut Interpreter, args: &[Value]) -> Result<Value, RuntimeError> {
+    fn call(&self, interpreter: &mut Interpreter, args: &[Value]) -> Result<Value, RuntimeException> {
         let mut env = Environment::encloser(&interpreter.globals);
         for (i, param) in self.params.iter().enumerate() {
             env.define(&param.lexeme, args[i].clone())
         }
-        interpreter.execute_block(&self.body, env)?;
-        Ok(Value::Nil)
+
+        let result = interpreter.execute_block(&self.body, env);
+
+        match result {
+            Ok(()) => Ok(Value::Nil),
+            Err(RuntimeException::Return(value)) => Ok(value),
+            Err(err) => Err(err),
+        }
+        
+        
     }
 
     fn arity(&self) -> usize {

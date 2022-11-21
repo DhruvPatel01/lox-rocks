@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use crate::token::Token;
 use crate::expr::Value;
-use crate::loxerr::RuntimeError;
+use crate::loxerr::RuntimeException;
 
 pub struct Environment {
     values: HashMap<String, Value>,
@@ -24,26 +24,26 @@ impl Environment {
         self.values.insert(name.to_owned(), val);
     }
 
-    pub fn assign(&mut self, t: &Token, val: Value) ->Result<(), RuntimeError> {
+    pub fn assign(&mut self, t: &Token, val: Value) ->Result<(), RuntimeException> {
         if self.values.contains_key(&t.lexeme) {
             self.values.insert(t.lexeme.clone(), val);
             Ok(())
         } else if let Some(enclosed) = &self.enclosing {
             enclosed.borrow_mut().assign(t, val)
         } else {
-            Err(RuntimeError { 
+            Err(RuntimeException::RuntimeError { 
                 token: t.clone(), 
                 error: format!("Undefined variable '{}'.", t.lexeme)})
         }
     }
 
-    pub fn get(&self, name: &Token) -> Result<Value, RuntimeError> {
+    pub fn get(&self, name: &Token) -> Result<Value, RuntimeException> {
         if let Some(v) = self.values.get(&name.lexeme) {
             Ok(v.clone())
         } else if let Some(enclosed) = &self.enclosing {
             enclosed.borrow().get(name)
         } else {
-            Err(RuntimeError{
+            Err(RuntimeException::RuntimeError{
                 token:name.clone(), 
                 error: format!("Undefined variable '{}'.", name.lexeme)
             })

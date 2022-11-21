@@ -1,8 +1,8 @@
 use crate::expr::{Expr, Value};
+use crate::loxerr::{self, ParseError};
 use crate::stmt::Stmt;
 use crate::token::{Token, TokenType};
 use TokenType::*;
-use crate::loxerr::{self, ParseError};
 
 pub struct Parser<'a> {
     current: usize,
@@ -12,7 +12,11 @@ pub struct Parser<'a> {
 
 impl<'a> Parser<'a> {
     pub fn new(tokens: &'a [Token]) -> Self {
-        Parser { current: 0, tokens, has_error: false}
+        Parser {
+            current: 0,
+            tokens,
+            has_error: false,
+        }
     }
 
     pub fn parse(&mut self) -> Vec<Stmt> {
@@ -48,13 +52,13 @@ impl<'a> Parser<'a> {
     }
 
     fn consume(&mut self, typ: TokenType, msg: &str) -> Result<&Token, ParseError> {
-        if self.check(&typ) {Ok(self.advance())}
-        else {
+        if self.check(&typ) {
+            Ok(self.advance())
+        } else {
             loxerr::parse_error(&self.peek(), msg);
             self.has_error = true;
             Err(ParseError)
         }
-
     }
 
     fn is_match(&mut self, types: &[TokenType]) -> bool {
@@ -75,9 +79,10 @@ impl<'a> Parser<'a> {
             }
 
             match self.peek().token_type {
-                Class | Fun | Var | For | If | While |
-                Print | Return => return,
-                _ => {self.advance();}
+                Class | Fun | Var | For | If | While | Print | Return => return,
+                _ => {
+                    self.advance();
+                }
             }
         }
     }
@@ -122,7 +127,9 @@ impl<'a> Parser<'a> {
         } else if self.is_match(&[While]) {
             self.while_statement()
         } else if self.is_match(&[For]) {
-            self.for_statement()  
+            self.for_statement()
+        } else if self.is_match(&[Return]) {
+            self.return_statement()
         } else {
             self.expression_statement()
         }
@@ -160,7 +167,7 @@ impl<'a> Parser<'a> {
     }
 
     fn for_statement(&mut self) -> Result<Stmt, ParseError> {
-        self.consume(LeftParen,  "Expect '(' after 'for'.")?;
+        self.consume(LeftParen, "Expect '(' after 'for'.")?;
 
         let initializer = if self.is_match(&[Semicolon]) {
             Stmt::Null
@@ -196,6 +203,19 @@ impl<'a> Parser<'a> {
         return Ok(body);
     }
 
+    fn return_statement(&mut self) -> Result<Stmt, ParseError> {
+        let keyword = self.previous().clone();
+
+        let value = if self.check(&Semicolon) {
+            None
+        } else {
+            Some(self.expression()?)
+        };
+        self.consume(Semicolon, "Expect ';' after return value.")?;
+
+        Ok(Stmt::Return(keyword, value))
+    }
+
     fn expression_statement(&mut self) -> Result<Stmt, ParseError> {
         let expr = self.expression()?;
         self.consume(Semicolon, &"Expect ';' after expression.")?;
@@ -203,7 +223,9 @@ impl<'a> Parser<'a> {
     }
 
     fn function(&mut self, kind: &str) -> Result<Stmt, ParseError> {
-        let name = self.consume(Identifier, &format!("Expect {} name", kind))?.clone();
+        let name = self
+            .consume(Identifier, &format!("Expect {} name", kind))?
+            .clone();
         self.consume(LeftParen, &format!("Expect '(' after {} name.", kind))?;
 
         let mut parameters = vec![];
@@ -250,7 +272,7 @@ impl<'a> Parser<'a> {
         if self.is_match(&[Equal]) {
             let equals = self.previous().clone();
             let value = self.assignment()?;
-            
+
             if let Expr::Variable(t) = expr {
                 return Ok(Expr::Assign(t, Box::new(value)));
             }
@@ -363,7 +385,6 @@ impl<'a> Parser<'a> {
         let paren = self.consume(RightParen, "Expect ')' after arguments.")?;
 
         Ok(Expr::Call(Box::new(callee), paren.clone(), args))
-
     }
 
     fn primary(&mut self) -> Result<Expr, ParseError> {

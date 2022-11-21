@@ -3,9 +3,9 @@ use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::env::Environment;
-use crate::expr::{Expr, Value};
-use crate::loxcallables::{Native, self};
-use crate::loxerr::RuntimeError;
+use crate::expr::{Expr, Value, self};
+use crate::loxcallables::{self, Native};
+use crate::loxerr::RuntimeException;
 use crate::stmt::Stmt;
 use crate::token::{Token, TokenType};
 use TokenType::*;
@@ -19,18 +19,22 @@ pub fn is_truthy(value: &Value) -> bool {
     }
 }
 
-fn err_numeric_operand(token: &Token) -> Result<Value, RuntimeError> {
-    Err(RuntimeError {
+fn gen_err(token: &Token, msg: &str) -> RuntimeException {
+    RuntimeException::RuntimeError {
         token: token.clone(),
-        error: "Operands must be numbers.".to_owned(),
-    })
+        error: msg.to_owned(),
+    }
 }
 
-fn err_numstr_operand(token: &Token) -> Result<Value, RuntimeError> {
-    Err(RuntimeError {
-        token: token.clone(),
-        error: "Operands must be two numbers or two strings.".to_owned(),
-    })
+fn err_numeric_operand(token: &Token) -> Result<Value, RuntimeException> {
+    Err(gen_err(token, "Operands must be numbers."))
+}
+
+fn err_numstr_operand(token: &Token) -> Result<Value, RuntimeException> {
+    Err(gen_err(
+        token,
+        "Operands must be two numbers or two strings.",
+    ))
 }
 
 pub struct Interpreter {
@@ -59,7 +63,7 @@ impl Interpreter {
         }
     }
 
-    fn evaluate(&mut self, expr: &Expr) -> Result<Value, RuntimeError> {
+    fn evaluate(&mut self, expr: &Expr) -> Result<Value, RuntimeException> {
         match expr {
             Expr::Literal(val) => Ok(val.clone()),
             Expr::Grouping(expr) => self.evaluate(expr),
@@ -79,22 +83,19 @@ impl Interpreter {
                 match callee {
                     Value::Callable(callee) => {
                         if args_evaluated.len() != callee.arity() {
-                            Err(RuntimeError {
-                                token: paren.clone(),
-                                error: format!(
+                            Err(gen_err(
+                                paren,
+                                &format!(
                                     "Expected {} arguments but got {}.",
                                     callee.arity(),
                                     args_evaluated.len()
                                 ),
-                            })
+                            ))
                         } else {
                             callee.call(self, &args_evaluated)
                         }
                     }
-                    _ => Err(RuntimeError {
-                        token: paren.clone(),
-                        error: "Can only call functions and classes.".to_owned(),
-                    }),
+                    _ => Err(gen_err(paren, "Can only call functions and classes.")),
                 }
             }
             Expr::Unary(op, expr) => {
@@ -103,10 +104,7 @@ impl Interpreter {
                     Bang => Ok(Bool(!is_truthy(&rhs))),
                     Minus => match rhs {
                         Value::Number(n) => Ok(Value::Number(-n)),
-                        _ => Err(RuntimeError {
-                            token: op.clone(),
-                            error: "Operand must be a number.".to_owned(),
-                        }),
+                        _ => Err(gen_err(op, "Operand must be a number."))
                     },
                     _ => unreachable!(),
                 }
@@ -166,7 +164,11 @@ impl Interpreter {
         }
     }
 
-    pub fn execute_block(&mut self, stmts: &Vec<Stmt>, env: Environment) -> Result<(), RuntimeError> {
+    pub fn execute_block(
+        &mut self,
+        stmts: &Vec<Stmt>,
+        env: Environment,
+    ) -> Result<(), RuntimeException> {
         let new_env = Rc::new(RefCell::new(env));
         let old_env = std::mem::replace(&mut self.env, new_env);
 
@@ -180,7 +182,7 @@ impl Interpreter {
         Ok(())
     }
 
-    fn execute(&mut self, stmt: &Stmt) -> Result<(), RuntimeError> {
+    fn execute(&mut self, stmt: &Stmt) -> Result<(), RuntimeException> {
         match stmt {
             Stmt::If(expr, if_part, else_part) => {
                 if is_truthy(&self.evaluate(expr)?) {
@@ -217,14 +219,24 @@ impl Interpreter {
             }
             Stmt::Function(id, _, _) => {
                 let fun = Rc::new(loxcallables::Function::new(stmt));
-                self.env.borrow_mut().define(&id.lexeme, Value::Callable(fun))
+                self.env
+                    .borrow_mut()
+                    .define(&id.lexeme, Value::Callable(fun))
             }
             Stmt::Null => (),
+            Stmt::Return(token, expr) => {
+                let return_value = if let Some(expr) = expr {
+                    self.evaluate(expr)?
+                } else {
+                    Value::Nil
+                };
+                return Err(RuntimeException::Return(return_value))
+            }
         };
         Ok(())
     }
 
-    pub fn interpret(&mut self, stmts: &Vec<Stmt>) -> Result<(), RuntimeError> {
+    pub fn interpret(&mut self, stmts: &Vec<Stmt>) -> Result<(), RuntimeException> {
         for stmt in stmts {
             self.execute(stmt)?;
         }

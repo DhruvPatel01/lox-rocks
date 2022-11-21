@@ -1,4 +1,5 @@
 use crate::token::{Token, TokenType};
+use crate::expr::Value;
 
 fn report(line: usize, wher: &str, msg: &str) {
     eprintln!("[line {}] Error{}: {}", line, wher, msg);
@@ -10,9 +11,13 @@ pub fn error(line: usize, msg: &str) {
 
 pub struct ParseError;
     
-pub struct RuntimeError {
-    pub token: Token,
-    pub error: String,
+
+pub enum RuntimeException {
+    RuntimeError {
+        token: Token,
+        error: String,
+    },
+    Return(Value),
 }
 
 pub fn parse_error(token: &Token, msg: &str) {
@@ -23,8 +28,14 @@ pub fn parse_error(token: &Token, msg: &str) {
     }
 }
 
-impl RuntimeError {
+impl RuntimeException {
     pub fn error(&self) {
-        eprintln!("{}\n[line {}]", self.error, self.token.line);
+        match &self {
+            RuntimeException::RuntimeError { token, error } => {
+                eprintln!("{}\n[line {}]", error, token.line);
+            }
+            _ => unreachable!()
+        }
+       
     }
 }
