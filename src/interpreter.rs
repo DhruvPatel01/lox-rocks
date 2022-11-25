@@ -3,7 +3,7 @@ use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::env::Environment;
-use crate::expr::{Expr, Value, self};
+use crate::expr::{Expr, Value};
 use crate::loxcallables::{self, Native};
 use crate::loxerr::RuntimeException;
 use crate::stmt::Stmt;
@@ -218,13 +218,14 @@ impl Interpreter {
                 self.execute_block(stmts, Environment::encloser(&self.env))?;
             }
             Stmt::Function(id, _, _) => {
-                let fun = Rc::new(loxcallables::Function::new(stmt));
+                let fun = loxcallables::Function::new(stmt, &self.env);
+                let fun = Rc::new(fun);
                 self.env
                     .borrow_mut()
                     .define(&id.lexeme, Value::Callable(fun))
             }
             Stmt::Null => (),
-            Stmt::Return(token, expr) => {
+            Stmt::Return(_token, expr) => {
                 let return_value = if let Some(expr) = expr {
                     self.evaluate(expr)?
                 } else {

@@ -1,3 +1,6 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use crate::env::Environment;
 use crate::expr::Value;
 use crate::interpreter::Interpreter;
@@ -25,17 +28,19 @@ impl Native{
 pub struct Function {
     id: Token,
     params: Vec<Token>,
-    body: Vec<Stmt>
+    body: Vec<Stmt>,
+    closure: Rc<RefCell<Environment>>
 }
 
 impl Function {
-    pub fn new(declaration: &Stmt) -> Function {
+    pub fn new(declaration: &Stmt, closure: &Rc<RefCell<Environment>>) -> Function {
         match declaration {
             Stmt::Function(id, params, body) => {
                 Function {
                     id: id.clone(), 
                     params: params.clone(), 
-                    body: body.clone()
+                    body: body.clone(),
+                    closure: Rc::clone(closure)
                 }
             },
             _ => unreachable!()
@@ -56,7 +61,7 @@ impl LoxCallable for Native {
 
 impl LoxCallable for Function {
     fn call(&self, interpreter: &mut Interpreter, args: &[Value]) -> Result<Value, RuntimeException> {
-        let mut env = Environment::encloser(&interpreter.globals);
+        let mut env = Environment::encloser(&self.closure);
         for (i, param) in self.params.iter().enumerate() {
             env.define(&param.lexeme, args[i].clone())
         }
