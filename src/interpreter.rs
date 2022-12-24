@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::collections::HashMap;
 
 use crate::env::Environment;
 use crate::expr::{Expr, Value};
@@ -39,6 +40,7 @@ fn err_numstr_operand(token: &Token) -> Result<Value, RuntimeException> {
 
 pub struct Interpreter {
     pub globals: Rc<RefCell<Environment>>,
+    locals: HashMap<*const Expr, usize>,
     env: Rc<RefCell<Environment>>,
 }
 
@@ -60,17 +62,42 @@ impl Interpreter {
         Interpreter {
             globals: Rc::clone(&global),
             env: Rc::clone(&global),
+            locals: HashMap::new(),
         }
     }
 
-    fn evaluate(&mut self, expr: &Expr) -> Result<Value, RuntimeException> {
-        match expr {
+    pub fn resolve(&mut self, expr: &Rc<Expr>, idx: usize) {
+        let expr_ref: *const Expr = &**expr;
+        // println!("Inserting express {:?} @ {:?} @@ {}", expr, expr_ref, idx);
+        self.locals.insert(expr_ref, idx);
+    }
+
+    fn lookup_variable(&self, name: &Token, expr: &Rc<Expr>)  -> Result<Value, RuntimeException> {
+        let key: *const Expr = &**expr;
+        
+        if let Some(dist) = self.locals.get(&key) {
+            // println!("Resolving {:?} @ {:?} @@ {}", expr, key, dist);
+            self.env.borrow().get_at(*dist, name)
+        } else {
+            // println!("Resolving {:?} @ {:?} @@ GLOBAL", expr, key);
+            self.globals.borrow().get(name)
+        }
+    }
+
+    fn evaluate(&mut self, expr: &Rc<Expr>) -> Result<Value, RuntimeException> {
+        match &**expr {
             Expr::Literal(val) => Ok(val.clone()),
             Expr::Grouping(expr) => self.evaluate(expr),
-            Expr::Variable(token) => self.env.borrow().get(token),
-            Expr::Assign(token, expr) => {
-                let val = self.evaluate(expr)?;
-                self.env.borrow_mut().assign(token, val.clone())?;
+            Expr::Variable(token) => self.lookup_variable(token, expr),
+            Expr::Assign(token, right_expr) => {
+                let val = self.evaluate(right_expr)?;
+                let key: *const Expr = &**expr;
+                if let Some(dist) = self.locals.get(&key) {
+                    self.env.borrow_mut().assign_at(*dist, &token, val.clone());
+                } else {
+                    self.globals.borrow_mut().assign(token, val.clone())?;
+                }
+                
                 Ok(val)
             }
             Expr::Call(callee, paren, args) => {

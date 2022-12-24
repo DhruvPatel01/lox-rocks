@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use crate::expr::{Expr, Value};
 use crate::loxerr::{self, ParseError};
 use crate::stmt::Stmt;
@@ -47,7 +49,6 @@ impl<'a> Parser<'a> {
     }
 
     fn check(&self, token_type: &TokenType) -> bool {
-        // TODO: this does not work for string, number types.
         !self.is_at_end() && self.peek().token_type == *token_type
     }
 
@@ -55,7 +56,7 @@ impl<'a> Parser<'a> {
         if self.check(&typ) {
             Ok(self.advance())
         } else {
-            loxerr::parse_error(&self.peek(), msg);
+            loxerr::parse_error(self.peek(), msg);
             self.has_error = true;
             Err(ParseError)
         }
@@ -180,7 +181,7 @@ impl<'a> Parser<'a> {
         let condition = if !self.check(&Semicolon) {
             self.expression()?
         } else {
-            Expr::Literal(Value::Bool(true))
+            Rc::new(Expr::Literal(Value::Bool(true)))
         };
         self.consume(Semicolon, "Expect ';' after loop condition.")?;
 
@@ -262,19 +263,19 @@ impl<'a> Parser<'a> {
         Ok(stmts)
     }
 
-    fn expression(&mut self) -> Result<Expr, ParseError> {
+    fn expression(&mut self) -> Result<Rc<Expr>, ParseError> {
         self.assignment()
     }
 
-    fn assignment(&mut self) -> Result<Expr, ParseError> {
+    fn assignment(&mut self) -> Result<Rc<Expr>, ParseError> {
         let expr = self.or()?;
 
         if self.is_match(&[Equal]) {
             let equals = self.previous().clone();
             let value = self.assignment()?;
 
-            if let Expr::Variable(t) = expr {
-                return Ok(Expr::Assign(t, Box::new(value)));
+            if let Expr::Variable(t) = &*expr {
+                return Ok(Rc::new(Expr::Assign(t.clone(), value)));
             }
 
             loxerr::parse_error(&equals, "Invalid assignment target.");
@@ -284,77 +285,77 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
 
-    fn or(&mut self) -> Result<Expr, ParseError> {
+    fn or(&mut self) -> Result<Rc<Expr>, ParseError> {
         let mut expr = self.and()?;
         while self.is_match(&[Or]) {
             let op = self.previous().clone();
             let right = self.and()?;
-            expr = Expr::Logical(Box::new(expr), op, Box::new(right));
+            expr = Rc::new(Expr::Logical(expr, op, right));
         }
         Ok(expr)
     }
 
-    fn and(&mut self) -> Result<Expr, ParseError> {
+    fn and(&mut self) -> Result<Rc<Expr>, ParseError> {
         let mut expr = self.equality()?;
         while self.is_match(&[And]) {
             let op = self.previous().clone();
             let right = self.equality()?;
-            expr = Expr::Logical(Box::new(expr), op, Box::new(right));
+            expr = Rc::new(Expr::Logical(expr, op, right));
         }
         Ok(expr)
     }
 
-    fn equality(&mut self) -> Result<Expr, ParseError> {
+    fn equality(&mut self) -> Result<Rc<Expr>, ParseError> {
         let mut expr = self.comparison()?;
         while self.is_match(&[BangEqual, EqualEqual]) {
             let op = self.previous().clone();
             let right = self.comparison()?;
-            expr = Expr::Binary(Box::new(expr), op, Box::new(right));
+            expr = Rc::new(Expr::Binary(expr, op, right));
         }
         Ok(expr)
     }
 
-    fn comparison(&mut self) -> Result<Expr, ParseError> {
+    fn comparison(&mut self) -> Result<Rc<Expr>, ParseError> {
         let mut expr = self.term()?;
         while self.is_match(&[Greater, GreaterEqual, Less, LessEqual]) {
             let op = self.previous().clone();
             let right = self.term()?;
-            expr = Expr::Binary(Box::new(expr), op, Box::new(right));
+            expr = Rc::new(Expr::Binary(expr, op, right));
         }
         Ok(expr)
     }
 
-    fn term(&mut self) -> Result<Expr, ParseError> {
+    fn term(&mut self) -> Result<Rc<Expr>, ParseError> {
         let mut expr = self.factor()?;
         while self.is_match(&[Plus, Minus]) {
             let op = self.previous().clone();
             let right = self.factor()?;
-            expr = Expr::Binary(Box::new(expr), op, Box::new(right));
+            expr = Rc::new(Expr::Binary(expr, op, right));
         }
         Ok(expr)
     }
 
-    fn factor(&mut self) -> Result<Expr, ParseError> {
+    fn factor(&mut self) -> Result<Rc<Expr>, ParseError> {
         let mut expr = self.unary()?;
         while self.is_match(&vec![Slash, Star]) {
             let op = self.previous().clone();
             let right = self.unary()?;
-            expr = Expr::Binary(Box::new(expr), op, Box::new(right));
+            expr = Rc::new(Expr::Binary(expr, op,right));
         }
         Ok(expr)
     }
 
-    fn unary(&mut self) -> Result<Expr, ParseError> {
+    fn unary(&mut self) -> Result<Rc<Expr>, ParseError> {
         if self.is_match(&vec![Bang, Minus]) {
             let op = self.previous().clone();
             let right = self.unary()?;
-            return Ok(Expr::Unary(op, Box::new(right)));
+            return Ok(Rc::new(Expr::Unary(op, right)));
         }
 
         self.call()
     }
 
-    fn call(&mut self) -> Result<Expr, ParseError> {
+    fn call(&mut self) -> Result<Rc<Expr>, ParseError> {
         let mut expr = self.primary()?;
         loop {
             if self.is_match(&[LeftParen]) {
@@ -366,7 +367,7 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
 
-    fn finish_call(&mut self, callee: Expr) -> Result<Expr, ParseError> {
+    fn finish_call(&mut self, callee: Rc<Expr>) -> Result<Rc<Expr>, ParseError> {
         let mut args = vec![];
 
         if !self.check(&RightParen) {
@@ -384,42 +385,42 @@ impl<'a> Parser<'a> {
 
         let paren = self.consume(RightParen, "Expect ')' after arguments.")?;
 
-        Ok(Expr::Call(Box::new(callee), paren.clone(), args))
+        Ok(Rc::new(Expr::Call(callee, paren.clone(), args)))
     }
 
-    fn primary(&mut self) -> Result<Expr, ParseError> {
+    fn primary(&mut self) -> Result<Rc<Expr>, ParseError> {
         match &self.peek().token_type {
             True => {
                 self.advance();
-                Ok(Expr::Literal(Value::Bool(true)))
+                Ok(Rc::new(Expr::Literal(Value::Bool(true))))
             }
             False => {
                 self.advance();
-                Ok(Expr::Literal(Value::Bool(false)))
+                Ok(Rc::new(Expr::Literal(Value::Bool(false))))
             }
             Nil => {
                 self.advance();
-                Ok(Expr::Literal(Value::Nil))
+                Ok(Rc::new(Expr::Literal(Value::Nil)))
             }
             Number(x) => {
-                let l = Expr::Literal(Value::Number(*x));
+                let l = Rc::new(Expr::Literal(Value::Number(*x)));
                 self.advance();
                 Ok(l)
             }
             StringLiteral(x) => {
-                let l = Expr::Literal(Value::String(x.clone()));
+                let l = Rc::new(Expr::Literal(Value::String(x.clone())));
                 self.advance();
                 Ok(l)
             }
             Identifier => {
                 self.advance();
-                Ok(Expr::Variable(self.previous().clone()))
+                Ok(Rc::new(Expr::Variable(self.previous().clone())))
             }
             LeftParen => {
                 self.advance();
                 let e = self.expression()?;
                 self.consume(RightParen, "Expect ')' after expression.")?;
-                Ok(Expr::Grouping(Box::new(e)))
+                Ok(Rc::new(Expr::Grouping(e)))
             }
             _ => {
                 self.has_error = true;

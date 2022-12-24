@@ -4,15 +4,15 @@ use std::rc::Rc;
 use crate::token::Token;
 use crate::loxcallables::LoxCallable;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Expr {
-    Assign(Token, Box<Expr>),
-    Binary(Box<Expr>, Token, Box<Expr>),
-    Call(Box<Expr>, Token, Vec::<Expr>),
-    Grouping(Box<Expr>),
+    Assign(Token, Rc<Expr>),
+    Binary(Rc<Expr>, Token, Rc<Expr>),
+    Call(Rc<Expr>, Token, Vec<Rc<Expr>>),
+    Grouping(Rc<Expr>),
     Literal(Value),
-    Logical(Box<Expr>, Token, Box<Expr>),
-    Unary(Token, Box<Expr>),
+    Logical(Rc<Expr>, Token, Rc<Expr>),
+    Unary(Token, Rc<Expr>),
     Variable(Token),
 }
 
@@ -38,6 +38,18 @@ impl Value {
 }
 
 impl fmt::Display for Value {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Value::Bool(b) => write!(f, "{}", b),
+            Value::Number(n) => write!(f, "{}", n),
+            Value::String(s) => write!(f, "{}", s),
+            Value::Nil => write!(f, "nil"),
+            Value::Callable(c) => write!(f, "{}", c),
+        }
+    }
+}
+
+impl fmt::Debug for Value {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Value::Bool(b) => write!(f, "{}", b),

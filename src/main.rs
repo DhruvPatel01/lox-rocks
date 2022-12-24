@@ -11,6 +11,7 @@ mod stmt;
 mod scanner;
 mod token;
 mod interpreter;
+mod resolver;
 mod env;
 mod loxcallables;
 
@@ -63,12 +64,16 @@ impl Lox {
             return 65;
         } 
 
+        let mut resolver = resolver::Resolver::new(&mut self.interpreter);
+        resolver.resolve(&stmts);
+        if resolver.has_error {
+            return 65;
+        }
+
         if let Err(e) = self.interpreter.interpret(&stmts) {
             e.error();
             return 70;
         }
-
-
         0
     }
     

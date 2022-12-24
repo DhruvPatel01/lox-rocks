@@ -37,6 +37,16 @@ impl Environment {
         }
     }
 
+    pub fn assign_at(&mut self, dist:usize, t: &Token, val: Value) {
+        if dist == 0 {
+            self.values.insert(t.lexeme.clone(), val);
+        } else {
+            let env = self.ancestor(dist);
+            env.borrow_mut().values.insert(t.lexeme.clone(), val);
+        }
+        
+    }
+
     pub fn get(&self, name: &Token) -> Result<Value, RuntimeException> {
         if let Some(v) = self.values.get(&name.lexeme) {
             Ok(v.clone())
@@ -49,4 +59,25 @@ impl Environment {
             })
         }
     }
+
+    fn ancestor(&self, idx: usize) -> Rc<RefCell<Environment>> {
+        let mut env = self.enclosing.clone().unwrap();
+
+        for _ in 1..idx {
+            env = Rc::clone(&env).borrow().enclosing.clone().unwrap();
+        }
+        env
+    }
+
+    pub fn get_at(&self, dist: usize, name: &Token) -> Result<Value, RuntimeException> {
+        let val = if dist == 0 {
+            self.values.get(&name.lexeme).unwrap().clone()
+        } else {
+            let env = self.ancestor(dist);
+            Rc::clone(&env).borrow().values.get(&name.lexeme).unwrap().clone()
+        };
+        
+        Ok(val)
+    }
+
 }

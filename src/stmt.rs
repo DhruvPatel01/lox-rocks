@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use crate::expr::Expr;
 use crate::token::Token;
 
@@ -5,11 +7,11 @@ use crate::token::Token;
 pub enum Stmt {
     Null,
     Block(Vec<Stmt>),
-    Expression(Expr),
+    Expression(Rc<Expr>),
     Function(Token, Vec<Token>, Vec<Stmt>),
-    If(Expr, Box<Stmt>, Option<Box<Stmt>>),
-    Print(Expr),
-    Return(Token, Option<Expr>),
-    Var(Token, Option<Expr>),
-    While(Expr, Box<Stmt>),
+    If(Rc<Expr>, Box<Stmt>, Option<Box<Stmt>>),
+    Print(Rc<Expr>),
+    Return(Token, Option<Rc<Expr>>),
+    Var(Token, Option<Rc<Expr>>),
+    While(Rc<Expr>, Box<Stmt>),
 }

@@ -150,7 +150,7 @@ impl<'a> Scanner<'a> {
                 if is_alpha(c) {
                     self.identifier();
                 } else {
-                    self.error(&format!("Unexpected character {}", c))
+                    self.error("Unexpected character.")
                 }
             }
         }

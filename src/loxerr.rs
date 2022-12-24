@@ -10,7 +10,6 @@ pub fn error(line: usize, msg: &str) {
 }
 
 pub struct ParseError;
-    
 
 pub enum RuntimeException {
     RuntimeError {
