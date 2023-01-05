@@ -1,4 +1,5 @@
 use std::rc::Rc;
+use std::vec;
 
 use crate::expr::{Expr, Value};
 use crate::loxerr::{self, ParseError};
@@ -89,7 +90,9 @@ impl<'a> Parser<'a> {
     }
 
     fn declaration(&mut self) -> Stmt {
-        let res = if self.is_match(&[Fun]) {
+        let res = if self.is_match(&[Class]) {
+            self.class_declaration()
+        } else if self.is_match(&[Fun]) {
             self.function("function")
         } else if self.is_match(&[Var]) {
             self.var_declaration()
@@ -104,6 +107,20 @@ impl<'a> Parser<'a> {
                 Stmt::Null
             }
         }
+    }
+
+    fn class_declaration(&mut self) -> Result<Stmt, ParseError> {
+        let name = self.consume(Identifier, "Expect class name.")?.clone();
+        self.consume(LeftBrace, "Expect '{' before class body.")?;
+
+        let mut methods = vec![];
+        while !self.check(&RightBrace) && !self.is_at_end() {
+            methods.push(self.function("method")?);
+        }
+
+        self.consume(RightBrace, "Expect '}' after class body.")?;
+        Ok(Stmt::Class(name, methods))
+
     }
 
     fn var_declaration(&mut self) -> Result<Stmt, ParseError> {
@@ -276,6 +293,8 @@ impl<'a> Parser<'a> {
 
             if let Expr::Variable(t) = &*expr {
                 return Ok(Rc::new(Expr::Assign(t.clone(), value)));
+            } else if let Expr::Get(obj, token) = &*expr {
+                return Ok(Rc::new(Expr::Set(Rc::clone(obj), token.clone(), value)));
             }
 
             loxerr::parse_error(&equals, "Invalid assignment target.");
@@ -360,6 +379,9 @@ impl<'a> Parser<'a> {
         loop {
             if self.is_match(&[LeftParen]) {
                 expr = self.finish_call(expr)?;
+            } else if self.is_match(&[Dot]){
+                let name = self.consume(Identifier, "Expect property name after '.'.")?;
+                expr = Rc::new(Expr::Get(expr, name.clone()));
             } else {
                 break;
             }
@@ -411,6 +433,10 @@ impl<'a> Parser<'a> {
                 let l = Rc::new(Expr::Literal(Value::String(x.clone())));
                 self.advance();
                 Ok(l)
+            }
+            This => {
+                self.advance();
+                Ok(Rc::new(Expr::This(self.previous().clone())))
             }
             Identifier => {
                 self.advance();

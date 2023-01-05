@@ -25,26 +25,38 @@ impl Native{
     }
 }
 
+#[derive(Clone)]
 pub struct Function {
     id: Token,
     params: Vec<Token>,
     body: Vec<Stmt>,
-    closure: Rc<RefCell<Environment>>
+    closure: Rc<RefCell<Environment>>,
+    is_init: bool,
 }
 
 impl Function {
-    pub fn new(declaration: &Stmt, closure: &Rc<RefCell<Environment>>) -> Function {
+    pub fn new(declaration: &Stmt, closure: &Rc<RefCell<Environment>>, is_init:bool ) -> Function {
         match declaration {
             Stmt::Function(id, params, body) => {
                 Function {
                     id: id.clone(), 
                     params: params.clone(), 
                     body: body.clone(),
-                    closure: Rc::clone(closure)
+                    closure: Rc::clone(closure),
+                    is_init
                 }
             },
             _ => unreachable!()
         }
+    }
+
+    pub fn bind(&self, instance: Value) -> Function {
+        let mut env = Environment::encloser(&self.closure);
+        env.define(&"this", instance);
+        
+        let mut fun = self.clone();
+        fun.closure = Rc::new(RefCell::new(env));
+        fun
     }
 }
 
@@ -68,12 +80,30 @@ impl LoxCallable for Function {
 
         let result = interpreter.execute_block(&self.body, env);
 
+        let dummy_token = Token{
+            token_type: crate::token::TokenType::This, 
+            lexeme: "this".to_owned(),
+            line: 0
+        };
+
         match result {
-            Ok(()) => Ok(Value::Nil),
-            Err(RuntimeException::Return(value)) => Ok(value),
-            Err(err) => Err(err),
+            Ok(()) => (),
+            Err(RuntimeException::Return(value)) =>  {
+                if self.is_init {
+                    return self.closure.borrow().get_at(0, &dummy_token)
+                } else {
+                    return Ok(value)
+                }
+            },
+
+            Err(err) => return Err(err),
         }
         
+        if self.is_init {
+            self.closure.borrow().get_at(0, &dummy_token)
+        } else {
+            Ok(Value::Nil)
+        }
         
     }
 

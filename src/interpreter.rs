@@ -1,8 +1,9 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use std::collections::HashMap;
 
+use crate::class;
 use crate::env::Environment;
 use crate::expr::{Expr, Value};
 use crate::loxcallables::{self, Native};
@@ -72,9 +73,9 @@ impl Interpreter {
         self.locals.insert(expr_ref, idx);
     }
 
-    fn lookup_variable(&self, name: &Token, expr: &Rc<Expr>)  -> Result<Value, RuntimeException> {
+    fn lookup_variable(&self, name: &Token, expr: &Rc<Expr>) -> Result<Value, RuntimeException> {
         let key: *const Expr = &**expr;
-        
+
         if let Some(dist) = self.locals.get(&key) {
             // println!("Resolving {:?} @ {:?} @@ {}", expr, key, dist);
             self.env.borrow().get_at(*dist, name)
@@ -97,7 +98,7 @@ impl Interpreter {
                 } else {
                     self.globals.borrow_mut().assign(token, val.clone())?;
                 }
-                
+
                 Ok(val)
             }
             Expr::Call(callee, paren, args) => {
@@ -108,7 +109,7 @@ impl Interpreter {
                 }
 
                 match callee {
-                    Value::Callable(callee) => {
+                    Value::Callable(callee) | Value::Class(callee) => {
                         if args_evaluated.len() != callee.arity() {
                             Err(gen_err(
                                 paren,
@@ -125,13 +126,26 @@ impl Interpreter {
                     _ => Err(gen_err(paren, "Can only call functions and classes.")),
                 }
             }
+
+            Expr::Get(object, field) => {
+                let object = self.evaluate(object)?;
+                if let Value::Instance(ref instance) = object {
+                    Ok(instance.borrow().get(field)?)
+                } else {
+                    Err(RuntimeException::RuntimeError {
+                        token: field.clone(),
+                        error: "Only instances have properties.".to_owned(),
+                    })
+                }
+            }
+
             Expr::Unary(op, expr) => {
                 let rhs = self.evaluate(expr)?;
                 match op.token_type {
                     Bang => Ok(Bool(!is_truthy(&rhs))),
                     Minus => match rhs {
                         Value::Number(n) => Ok(Value::Number(-n)),
-                        _ => Err(gen_err(op, "Operand must be a number."))
+                        _ => Err(gen_err(op, "Operand must be a number.")),
                     },
                     _ => unreachable!(),
                 }
@@ -144,6 +158,23 @@ impl Interpreter {
                     _ => self.evaluate(e2),
                 }
             }
+
+            Expr::Set(object, name, value) => {
+                let object = self.evaluate(object)?;
+                if let Value::Instance(instance) = object {
+                    let value = self.evaluate(value)?;
+                    instance.borrow_mut().set(name, value.clone());
+                    Ok(value)
+                } else {
+                    Err(RuntimeException::RuntimeError {
+                        token: name.clone(),
+                        error: "Only instances have fields.".to_owned(),
+                    })
+                }
+            }
+
+            Expr::This(token) => self.lookup_variable(token, expr),
+
             Expr::Binary(e1, op, e2) => {
                 let l = self.evaluate(e1)?;
                 let r = self.evaluate(e2)?;
@@ -244,8 +275,24 @@ impl Interpreter {
             Stmt::Block(stmts) => {
                 self.execute_block(stmts, Environment::encloser(&self.env))?;
             }
+
+            Stmt::Class(name, methods) => {
+                self.env.borrow_mut().define(&name.lexeme, Value::Nil);
+
+                let mut methods_hm = HashMap::new();
+                for method in methods {
+                    if let Stmt::Function(token, _, _) = method {
+                        let fun = loxcallables::Function::new(method, &self.env, token.lexeme == "init");
+                        methods_hm.insert(token.lexeme.clone(), fun);
+                    }
+                }
+                let methods = Rc::new(methods_hm);
+                let klass = Rc::new(class::LoxClass::new(name.lexeme.clone(), &methods));
+                self.env.borrow_mut().assign(name, Value::Class(klass))?;
+            }
+
             Stmt::Function(id, _, _) => {
-                let fun = loxcallables::Function::new(stmt, &self.env);
+                let fun = loxcallables::Function::new(stmt, &self.env, false);
                 let fun = Rc::new(fun);
                 self.env
                     .borrow_mut()
@@ -258,7 +305,7 @@ impl Interpreter {
                 } else {
                     Value::Nil
                 };
-                return Err(RuntimeException::Return(return_value))
+                return Err(RuntimeException::Return(return_value));
             }
         };
         Ok(())

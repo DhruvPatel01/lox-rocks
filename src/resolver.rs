@@ -11,6 +11,14 @@ use crate::token::Token;
 enum FunctionType {
     NONE,
     FUNCTION,
+    INITIALIZER,
+    METHOD,
+}
+
+#[derive(PartialEq)]
+enum ClassType {
+    NONE, 
+    CLASS
 }
 
 pub struct Resolver<'a> {
@@ -18,6 +26,7 @@ pub struct Resolver<'a> {
     scopes: Vec<HashMap<String, bool>>,
     pub has_error: bool,
     current_function: FunctionType,
+    current_class: ClassType,
 }
 
 impl<'a> Resolver<'a> {
@@ -27,6 +36,7 @@ impl<'a> Resolver<'a> {
             scopes: Vec::new(),
             has_error: false,
             current_function: FunctionType::NONE,
+            current_class: ClassType::NONE,
         }
     }
 
@@ -43,6 +53,30 @@ impl<'a> Resolver<'a> {
                 self.begin_scope();
                 self.resolve(stmts);
                 self.end_scope();
+            }
+            Stmt::Class(name, methods) => {
+                let enclosing_class = std::mem::replace(&mut self.current_class, ClassType::CLASS);
+                self.declare(name);
+                self.define(name);
+
+                self.begin_scope();
+                self.scopes.last_mut().unwrap().insert("this".to_owned(), true);
+
+                for stmt in methods {
+                    if let Stmt::Function(name, params , body) = stmt {
+                        let  declaration = if name.lexeme == "init" {
+                            FunctionType::INITIALIZER
+                        } else {
+                            FunctionType::METHOD
+                        };
+
+                        self.resolve_function(params, body, declaration);
+                    }
+                    
+                }
+
+                self.end_scope();
+                self.current_class = enclosing_class;
             }
             Stmt::Expression(expr) => self.resolve_expr(expr),
             Stmt::Function(token, params, body) => {
@@ -67,6 +101,13 @@ impl<'a> Resolver<'a> {
                     self.has_error = true;
                     ()
                 } else if let Some(value) = ret_expr {
+                    if self.current_function == FunctionType::INITIALIZER {
+                        loxerr::parse_error(
+                            name,
+                            "Can't return a value from an initializer."
+                        );
+                        self.has_error = true;
+                    }
                     self.resolve_expr(value)
                 } else {
                     ()
@@ -104,12 +145,30 @@ impl<'a> Resolver<'a> {
                     self.resolve_expr(expr);
                 }
             }
+            Expr::Get(object, _) => self.resolve_expr(object),
             Expr::Grouping(expr) => self.resolve_expr(expr),
             Expr::Literal(..) => (),
             Expr::Logical(left, _op, right) => {
                 self.resolve_expr(left);
                 self.resolve_expr(right);
             }
+            Expr::Set(object, _, value) => {
+              self.resolve_expr(object);
+              self.resolve_expr(value);  
+            }
+            Expr::This(token) => {
+                if self.current_class == ClassType::NONE {
+                    loxerr::parse_error(
+                        token,
+                        "Can't use 'this' outside of a class."
+                    );
+                    self.has_error = true;
+                } else {
+                    self.resolve_local(expr, token);
+                }
+                
+
+            } 
             Expr::Unary(_, expr) => self.resolve_expr(expr),
             Expr::Variable(token) => {
                 if let Some(scope) = self.scopes.last() {

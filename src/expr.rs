@@ -1,17 +1,22 @@
+use std::cell::RefCell;
 use std::fmt;
 use std::rc::Rc;
 
 use crate::token::Token;
 use crate::loxcallables::LoxCallable;
+use crate::instance::LoxInstance;
 
 #[derive(Clone, Debug)]
 pub enum Expr {
     Assign(Token, Rc<Expr>),
     Binary(Rc<Expr>, Token, Rc<Expr>),
     Call(Rc<Expr>, Token, Vec<Rc<Expr>>),
+    Get(Rc<Expr>, Token),
     Grouping(Rc<Expr>),
     Literal(Value),
     Logical(Rc<Expr>, Token, Rc<Expr>),
+    Set(Rc<Expr>, Token, Rc<Expr>),
+    This(Token),
     Unary(Token, Rc<Expr>),
     Variable(Token),
 }
@@ -22,7 +27,9 @@ pub enum Value {
     Number(f64),
     Nil,
     String(String),
-    Callable(Rc<dyn LoxCallable>)
+    Callable(Rc<dyn LoxCallable>),
+    Class(Rc<dyn LoxCallable>),
+    Instance(Rc<RefCell<LoxInstance>>),
 }
 
 impl Value {
@@ -32,6 +39,10 @@ impl Value {
             (Value::Number(l), Value::Number(r)) => l == r,
             (Value::Nil, Value::Nil) => true,
             (Value::String(l), Value::String(r)) => l == r,
+            (Value::Class(l), Value::Class(r)) => {
+                l.to_string() == r.to_string()
+            }
+            (Value::Callable(l), Value::Callable(r)) => l.to_string() == r.to_string(),
             _ => false
         }
     }
@@ -45,6 +56,8 @@ impl fmt::Display for Value {
             Value::String(s) => write!(f, "{}", s),
             Value::Nil => write!(f, "nil"),
             Value::Callable(c) => write!(f, "{}", c),
+            Value::Class(c) =>  write!(f, "{}", c),
+            Value::Instance(i) => write!(f, "{}", (**i).borrow())
         }
     }
 }
@@ -57,6 +70,8 @@ impl fmt::Debug for Value {
             Value::String(s) => write!(f, "{}", s),
             Value::Nil => write!(f, "nil"),
             Value::Callable(c) => write!(f, "{}", c),
+            Value::Class(c) =>  write!(f, "{}", c),
+            Value::Instance(i) => write!(f, "{}", (**i).borrow())
         }
     }
 }

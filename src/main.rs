@@ -14,6 +14,8 @@ mod interpreter;
 mod resolver;
 mod env;
 mod loxcallables;
+mod class;
+mod instance;
 
 use crate::interpreter::Interpreter;
 
