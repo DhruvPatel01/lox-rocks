@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::fmt;
 use std::rc::Rc;
 
+use crate::class::LoxClass;
 use crate::token::Token;
 use crate::loxcallables::LoxCallable;
 use crate::instance::LoxInstance;
@@ -16,6 +17,7 @@ pub enum Expr {
     Literal(Value),
     Logical(Rc<Expr>, Token, Rc<Expr>),
     Set(Rc<Expr>, Token, Rc<Expr>),
+    Super(Token, Token),
     This(Token),
     Unary(Token, Rc<Expr>),
     Variable(Token),
@@ -28,7 +30,7 @@ pub enum Value {
     Nil,
     String(String),
     Callable(Rc<dyn LoxCallable>),
-    Class(Rc<dyn LoxCallable>),
+    Class(Rc<LoxClass>),
     Instance(Rc<RefCell<LoxInstance>>),
 }
 

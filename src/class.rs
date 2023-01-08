@@ -12,16 +12,25 @@ use crate::expr::Value;
 #[derive(Clone)]
 pub struct LoxClass {
     pub name: String,
+    superclass: Option<Rc<LoxClass>>,
     methods: Rc<HashMap<String, Function>>, //Rc to derive Clone.
 }
 
 impl LoxClass {
-    pub fn new(name: String, methods: &Rc<HashMap<String, Function>>) -> Self {
-        LoxClass {name, methods: Rc::clone(methods)}
+    pub fn new(name: String, superclass: Option<Rc<LoxClass>>, methods: &Rc<HashMap<String, Function>>) -> Self {
+        LoxClass {name, superclass, methods: Rc::clone(methods)}
     }
 
     pub fn find_method(&self, name: &str) -> Option<&Function> {
-        self.methods.get(name)
+        if self.methods.contains_key(name) {
+            return self.methods.get(name);
+        }
+        
+        if let Some(superclass) = &self.superclass {
+            return superclass.find_method(name);
+        }
+
+        None
     }
 }
 

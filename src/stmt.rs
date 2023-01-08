@@ -7,7 +7,7 @@ use crate::token::Token;
 pub enum Stmt {
     Null,
     Block(Vec<Stmt>),
-    Class(Token, Vec<Stmt>), // more specifically, will contain Stmt.Function
+    Class(Token, Option<Rc<Expr>>, Vec<Stmt>), // more specifically, will contain Stmt.Function
     Expression(Rc<Expr>),
     Function(Token, Vec<Token>, Vec<Stmt>),
     If(Rc<Expr>, Box<Stmt>, Option<Box<Stmt>>),

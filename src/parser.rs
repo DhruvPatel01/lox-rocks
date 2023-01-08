@@ -111,6 +111,14 @@ impl<'a> Parser<'a> {
 
     fn class_declaration(&mut self) -> Result<Stmt, ParseError> {
         let name = self.consume(Identifier, "Expect class name.")?.clone();
+        
+        let superclass = if self.is_match(&[Less]) {
+            let superclass = self.consume(Identifier, "Expect superclass name.")?;
+            Some(Rc::new(Expr::Variable(superclass.clone())))
+        } else {
+            None
+        };
+
         self.consume(LeftBrace, "Expect '{' before class body.")?;
 
         let mut methods = vec![];
@@ -118,8 +126,10 @@ impl<'a> Parser<'a> {
             methods.push(self.function("method")?);
         }
 
+        
+
         self.consume(RightBrace, "Expect '}' after class body.")?;
-        Ok(Stmt::Class(name, methods))
+        Ok(Stmt::Class(name, superclass, methods))
 
     }
 
@@ -433,6 +443,14 @@ impl<'a> Parser<'a> {
                 let l = Rc::new(Expr::Literal(Value::String(x.clone())));
                 self.advance();
                 Ok(l)
+            }
+            Super => {
+                let keyword = self.peek().clone();
+                self.advance();
+                self.consume(Dot, "Expect '.' after 'super'.")?;
+
+                let method = self.consume(Identifier, "Expect superclass method name.")?;
+                Ok(Rc::new(Expr::Super(keyword, method.clone())))
             }
             This => {
                 self.advance();

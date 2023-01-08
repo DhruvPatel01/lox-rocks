@@ -6,6 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::class;
 use crate::env::Environment;
 use crate::expr::{Expr, Value};
+use crate::loxcallables::LoxCallable;
 use crate::loxcallables::{self, Native};
 use crate::loxerr::RuntimeException;
 use crate::stmt::Stmt;
@@ -48,7 +49,7 @@ pub struct Interpreter {
 impl Interpreter {
     pub fn new() -> Self {
         let global = Rc::new(RefCell::new(Environment::new()));
-        global.borrow_mut().define(
+        (*global).borrow_mut().define(
             "clock",
             Value::Callable(Rc::new(Native::new(0, |_| {
                 Ok(Value::Number(
@@ -94,9 +95,11 @@ impl Interpreter {
                 let val = self.evaluate(right_expr)?;
                 let key: *const Expr = &**expr;
                 if let Some(dist) = self.locals.get(&key) {
-                    self.env.borrow_mut().assign_at(*dist, &token, val.clone());
+                    (*self.env)
+                        .borrow_mut()
+                        .assign_at(*dist, &token, val.clone());
                 } else {
-                    self.globals.borrow_mut().assign(token, val.clone())?;
+                    (*self.globals).borrow_mut().assign(token, val.clone())?;
                 }
 
                 Ok(val)
@@ -109,7 +112,21 @@ impl Interpreter {
                 }
 
                 match callee {
-                    Value::Callable(callee) | Value::Class(callee) => {
+                    Value::Callable(callee) => {
+                        if args_evaluated.len() != callee.arity() {
+                            Err(gen_err(
+                                paren,
+                                &format!(
+                                    "Expected {} arguments but got {}.",
+                                    callee.arity(),
+                                    args_evaluated.len()
+                                ),
+                            ))
+                        } else {
+                            callee.call(self, &args_evaluated)
+                        }
+                    }
+                    Value::Class(callee) => {
                         if args_evaluated.len() != callee.arity() {
                             Err(gen_err(
                                 paren,
@@ -163,13 +180,40 @@ impl Interpreter {
                 let object = self.evaluate(object)?;
                 if let Value::Instance(instance) = object {
                     let value = self.evaluate(value)?;
-                    instance.borrow_mut().set(name, value.clone());
+                    (*instance).borrow_mut().set(name, value.clone());
                     Ok(value)
                 } else {
                     Err(RuntimeException::RuntimeError {
                         token: name.clone(),
                         error: "Only instances have fields.".to_owned(),
                     })
+                }
+            }
+
+            Expr::Super(keyword, identifier) => {
+                let expr_ref: *const Expr = &**expr;
+                let dist = *self.locals.get(&expr_ref).unwrap();
+                let superclass = self.env.borrow_mut().get_at(dist, keyword)?;
+
+                let dummy_token = Token {
+                    token_type: This,
+                    lexeme: "this".to_owned(),
+                    line: 0,
+                };
+                let this = self.env.borrow().get_at(dist - 1, &dummy_token)?;
+
+                if let Value::Class(superclass) = superclass {
+                    let method = superclass.find_method(&identifier.lexeme);
+                    if let None = method {
+                        return Err(RuntimeException::RuntimeError {
+                            token: identifier.clone(),
+                            error: format!("Undefined property '{}'.", identifier.lexeme),
+                        });
+                    }
+                    let method = method.unwrap().bind(this);
+                    return Ok(Value::Callable(Rc::new(method)));
+                } else {
+                    unreachable!()
                 }
             }
 
@@ -269,32 +313,68 @@ impl Interpreter {
                     .as_ref()
                     .map(|x| self.evaluate(x))
                     .unwrap_or(Ok(Value::Nil))?;
-                self.env.borrow_mut().define(&token.lexeme, value);
+                (*self.env).borrow_mut().define(&token.lexeme, value);
             }
 
             Stmt::Block(stmts) => {
                 self.execute_block(stmts, Environment::encloser(&self.env))?;
             }
 
-            Stmt::Class(name, methods) => {
-                self.env.borrow_mut().define(&name.lexeme, Value::Nil);
+            Stmt::Class(name, superclass, methods) => {
+                let mut superclass_t = None;
+                if let Some(superclass) = superclass {
+                    if let Expr::Variable(token) = &**superclass {
+                        let superclass = self.evaluate(superclass)?;
+                        if let Value::Class(tmp) = &superclass {
+                            superclass_t = Some(tmp.clone())
+                        } else {
+                            return Err(RuntimeException::RuntimeError {
+                                token: token.clone(),
+                                error: "Superclass must be a class.".to_owned(),
+                            });
+                        }
+                    } else {
+                        unreachable!()
+                    }
+                }
+
+                (*self.env).borrow_mut().define(&name.lexeme, Value::Nil);
+
+                let mut old_env = None;
+                if let Some(superclass) = &superclass_t {
+                    let new_env = Rc::new(RefCell::new(Environment::encloser(&self.env)));
+                    let superclass = Value::Class(Rc::clone(superclass));
+                    (*new_env).borrow_mut().define("super", superclass);
+                    old_env = Some(std::mem::replace(&mut self.env, new_env));
+                }
 
                 let mut methods_hm = HashMap::new();
                 for method in methods {
                     if let Stmt::Function(token, _, _) = method {
-                        let fun = loxcallables::Function::new(method, &self.env, token.lexeme == "init");
+                        let fun =
+                            loxcallables::Function::new(method, &self.env, token.lexeme == "init");
                         methods_hm.insert(token.lexeme.clone(), fun);
                     }
                 }
                 let methods = Rc::new(methods_hm);
-                let klass = Rc::new(class::LoxClass::new(name.lexeme.clone(), &methods));
-                self.env.borrow_mut().assign(name, Value::Class(klass))?;
+                let klass = Rc::new(class::LoxClass::new(
+                    name.lexeme.clone(),
+                    superclass_t,
+                    &methods,
+                ));
+
+                if let Some(_) = superclass {
+                    if let Some(old_env) = old_env {
+                        self.env = old_env;
+                    }
+                }
+                (*self.env).borrow_mut().assign(name, Value::Class(klass))?;
             }
 
             Stmt::Function(id, _, _) => {
                 let fun = loxcallables::Function::new(stmt, &self.env, false);
                 let fun = Rc::new(fun);
-                self.env
+                (*self.env)
                     .borrow_mut()
                     .define(&id.lexeme, Value::Callable(fun))
             }

@@ -18,7 +18,8 @@ enum FunctionType {
 #[derive(PartialEq)]
 enum ClassType {
     NONE, 
-    CLASS
+    CLASS,
+    SUBCLASS,
 }
 
 pub struct Resolver<'a> {
@@ -54,10 +55,27 @@ impl<'a> Resolver<'a> {
                 self.resolve(stmts);
                 self.end_scope();
             }
-            Stmt::Class(name, methods) => {
+            Stmt::Class(name, superclass, methods) => {
                 let enclosing_class = std::mem::replace(&mut self.current_class, ClassType::CLASS);
                 self.declare(name);
                 self.define(name);
+
+                if let Some(superclass) = superclass {
+                    self.current_class = ClassType::SUBCLASS;
+                    if let Expr::Variable(token) = &**superclass {
+                        if  token.lexeme == name.lexeme {
+                            loxerr::parse_error(name, "A class can't inherit from itself.");
+                            self.has_error = true;
+                        }
+                    }
+
+                    self.resolve_expr(superclass);
+
+                    self.begin_scope();
+                    self.scopes.last_mut().unwrap().insert("super".to_owned(), true);
+                }
+
+                
 
                 self.begin_scope();
                 self.scopes.last_mut().unwrap().insert("this".to_owned(), true);
@@ -76,6 +94,8 @@ impl<'a> Resolver<'a> {
                 }
 
                 self.end_scope();
+                if let Some(_) = superclass { self.end_scope(); }
+
                 self.current_class = enclosing_class;
             }
             Stmt::Expression(expr) => self.resolve_expr(expr),
@@ -156,6 +176,24 @@ impl<'a> Resolver<'a> {
               self.resolve_expr(object);
               self.resolve_expr(value);  
             }
+            
+            Expr::Super(keyword, _) => {
+                if self.current_class == ClassType::NONE {
+                    loxerr::parse_error(
+                        keyword,
+                        "Can't use 'super' outside of a class."
+                    );
+                    self.has_error = true;
+                } else if self.current_class != ClassType::SUBCLASS {
+                    loxerr::parse_error(
+                        keyword,
+                        "Can't use 'super' in a class with no superclass."
+                    );
+                    self.has_error = true;
+                }
+                self.resolve_local(expr, keyword)
+            }
+
             Expr::This(token) => {
                 if self.current_class == ClassType::NONE {
                     loxerr::parse_error(
